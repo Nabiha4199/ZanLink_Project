@@ -339,6 +339,8 @@ function detailView(id) {
 }
 
 function doc1Detail(doc) {
+  const salesOnly = currentUser.role === "Sales";
+  const accountsOnly = currentUser.role === "Accounts";
   return `
     <section class="panel">
       <div class="section-title">
@@ -353,21 +355,35 @@ function doc1Detail(doc) {
       </div>
     </section>
     ${salesSection(doc)}
-    ${accountsSection(doc)}
-    ${storeSection(doc)}
-    ${managementSection(doc)}
+    ${salesOnly ? "" : accountsSection(doc)}
+    ${salesOnly || accountsOnly ? "" : storeSection(doc)}
+    ${salesOnly || accountsOnly ? "" : managementSection(doc)}
   `;
 }
 
 function salesSection(doc) {
   const editable = canAct(doc, ["Sales"]) && ["Pending Sales", "Returned to Sales"].includes(doc.status);
+  const sales = doc.sales || {};
+  const equipment = doc.store?.items || [];
   return `
     <form class="panel" data-action="sales-submit" data-id="${doc.id}">
-      <div class="section-title"><h2>Sales Section</h2></div>
+      <div class="section-title">
+        <h2>Engineer Equipment</h2>
+      </div>
+      <div class="readonly-equipment">
+        ${equipment.length ? readOnlyEquipmentTable(equipment) : `<div class="empty">No equipment added by Engineer.</div>`}
+      </div>
       <div class="form-grid">
-        <label>Total Amount <input name="amount" type="number" min="0" value="${doc.sales?.amount || ""}" ${editable ? "required" : "disabled"} /></label>
-        <label>Package Cost <input name="packageCost" type="number" min="0" value="${doc.sales?.packageCost || ""}" ${editable ? "" : "disabled"} /></label>
-        <label class="wide">Remarks <textarea name="remarks" ${editable ? "" : "disabled"}>${doc.sales?.remarks || ""}</textarea></label>
+        <label>Client Name <input name="clientName" value="${escapeAttr(sales.clientName || doc.clientName || "")}" ${editable ? "required" : "disabled"} /></label>
+        <label>Location <input name="location" value="${escapeAttr(sales.location || doc.location || "")}" ${editable ? "required" : "disabled"} /></label>
+        <label>Survey Form No. <input name="surveyFormNo" value="${escapeAttr(sales.surveyFormNo || doc.number || "")}" ${editable ? "required" : "disabled"} /></label>
+        <label>Installation Cost <input name="amount" type="number" min="0" value="${sales.amount || ""}" ${editable ? "required" : "disabled"} /></label>
+        <label>Total Equipment Cost <input name="packageCost" type="number" min="0" value="${sales.packageCost || ""}" ${editable ? "required" : "disabled"} /></label>
+        <label>Additional NPR <input name="additionalNpr" type="number" min="0" value="${sales.additionalNpr || ""}" ${editable ? "required" : "disabled"} /></label>
+        <label>Subscription <input name="subscription" value="${escapeAttr(sales.subscription || sales.remarks || doc.service || "")}" ${editable ? "required" : "disabled"} /></label>
+        <label>MBR <input name="mbr" type="number" min="0" value="${sales.mbr || ""}" ${editable ? "required" : "disabled"} /></label>
+        <label>Requested By <input name="requestedBy" value="${escapeAttr(sales.requestedBy || currentUser.name || "")}" ${editable ? "required" : "disabled"} /></label>
+        <label>Date <input name="requestedDate" type="date" value="${sales.requestedDate || new Date().toISOString().slice(0, 10)}" ${editable ? "required" : "disabled"} /></label>
       </div>
       ${editable ? `<div class="button-row"><button class="btn" type="submit">Submit to Accounts</button></div>` : ""}
     </form>
@@ -376,6 +392,7 @@ function salesSection(doc) {
 
 function accountsSection(doc) {
   const editable = canAct(doc, ["Accounts"]) && doc.status === "Pending Accounts";
+  const equipment = doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []);
   return `
     <form class="panel" data-action="accounts-submit" data-id="${doc.id}">
       <div class="section-title"><h2>Accounts Section</h2></div>
@@ -383,6 +400,10 @@ function accountsSection(doc) {
         <label>Billing Amount <input name="billingAmount" type="number" min="0" value="${doc.accounts?.billingAmount || ""}" ${editable ? "required" : "disabled"} /></label>
         <label>Invoice Number <input name="invoiceNumber" value="${escapeAttr(doc.accounts?.invoiceNumber || "")}" ${editable ? "required" : "disabled"} /></label>
         <label class="wide">Remarks <textarea name="remarks" ${editable ? "" : "disabled"}>${doc.accounts?.remarks || ""}</textarea></label>
+      </div>
+      <div class="section-title"><h2>Equipment Costs</h2></div>
+      <div class="items-list">
+        ${equipment.length ? equipment.map((item) => accountEquipmentInputs(item, editable)).join("") : `<div class="empty">No sales equipment added.</div>`}
       </div>
       ${editable ? `<div class="button-row"><button class="btn" type="submit">Submit to Store</button></div>` : ""}
     </form>
@@ -421,6 +442,7 @@ function managementSection(doc) {
 function maintenanceDetail(doc) {
   const hodEditable = canAct(doc, ["HOD"]) && doc.status === "Pending HOD";
   const accountsEditable = canAct(doc, ["Accounts"]) && doc.status === "Pending Accounts";
+  const accountsOnly = currentUser.role === "Accounts";
   return `
     <section class="panel">
       <div class="section-title"><h2>Maintenance Details</h2><span class="status ${statusClass(doc.status)}">${doc.status}</span></div>
@@ -429,11 +451,11 @@ function maintenanceDetail(doc) {
         <p><strong>Recommended Action</strong><br>${doc.maintenance?.action || "-"}</p>
       </div>
     </section>
-    <form class="panel" data-action="hod-submit" data-id="${doc.id}">
+    ${accountsOnly ? "" : `<form class="panel" data-action="hod-submit" data-id="${doc.id}">
       <div class="section-title"><h2>HOD Approval</h2></div>
       <label>HOD Notes <textarea name="remarks" ${hodEditable ? "" : "disabled"}>${doc.hod?.remarks || ""}</textarea></label>
       ${hodEditable ? `<div class="button-row"><button class="btn" type="submit">Approve to Accounts</button></div>` : ""}
-    </form>
+    </form>`}
     <form class="panel" data-action="maintenance-accounts-submit" data-id="${doc.id}">
       <div class="section-title"><h2>Accounts Billing</h2></div>
       <div class="form-grid">
@@ -456,6 +478,36 @@ function itemInputs(item, storeMode) {
       <label>Purpose <input name="purpose" value="${escapeAttr(item.purpose || "")}" /></label>
       <label>Unit Cost <input name="unitCost" type="number" min="0" value="${item.unitCost || 0}" /></label>
       ${storeMode ? `<span></span>` : `<button class="btn secondary no-print" type="button" data-remove-item>Remove</button>`}
+    </div>
+  `;
+}
+
+function readOnlyEquipmentTable(items) {
+  return `
+    <div class="readonly-equipment-list">
+      ${items.map((item) => `
+        <div class="readonly-equipment-row">
+          <div class="readonly-equipment-main">
+            <span>Item</span>
+            <strong>${escapeAttr(item.name || "-")}</strong>
+          </div>
+          <div class="readonly-equipment-meta">
+            <span><b>Req. Qty</b>${item.requestedQty || 1}</span>
+            <span><b>Purpose</b>${escapeAttr(item.purpose || "-")}</span>
+            <span><b>Serial No.</b>${escapeAttr(item.serialNumber || "-")}</span>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function accountEquipmentInputs(item, editable) {
+  return `
+    <div class="item-row">
+      <label>Item <input name="itemName" value="${escapeAttr(item.name || "")}" disabled /></label>
+      <label>Req. Qty <input name="requestedQty" type="number" min="1" value="${item.requestedQty || 1}" disabled /></label>
+      <label>Unit Cost <input name="unitCost" type="number" min="0" value="${item.unitCost || ""}" ${editable ? "required" : "disabled"} /></label>
     </div>
   `;
 }
@@ -605,7 +657,9 @@ function bindEvents() {
   }));
 
   document.querySelectorAll("[data-add-item]").forEach((button) => button.addEventListener("click", () => {
-    button.closest("form").querySelector("[data-items]").insertAdjacentHTML("beforeend", itemInputs({ requestedQty: 1 }, false));
+    const form = button.closest("form");
+    const row = form.dataset.action === "sales-submit" ? salesEquipmentInputs({ requestedQty: 1 }, true) : itemInputs({ requestedQty: 1 }, false);
+    form.querySelector("[data-items]").insertAdjacentHTML("beforeend", row);
     bindEvents();
   }));
 
@@ -709,7 +763,22 @@ function createMaintenance(form) {
 function salesSubmit(form) {
   const doc = findDoc(form);
   const data = new FormData(form);
-  doc.sales = { amount: Number(data.get("amount")), packageCost: Number(data.get("packageCost") || 0), remarks: data.get("remarks") };
+  doc.clientName = data.get("clientName");
+  doc.location = data.get("location");
+  doc.sales = {
+    clientName: data.get("clientName"),
+    location: data.get("location"),
+    surveyFormNo: data.get("surveyFormNo"),
+    amount: Number(data.get("amount")),
+    packageCost: Number(data.get("packageCost") || 0),
+    additionalNpr: Number(data.get("additionalNpr") || 0),
+    subscription: data.get("subscription"),
+    mbr: Number(data.get("mbr") || 0),
+    requestedBy: data.get("requestedBy"),
+    requestedDate: data.get("requestedDate"),
+    equipment: doc.store?.items || [],
+    remarks: data.get("subscription")
+  };
   moveDoc(doc, "Pending Accounts", "Accounts");
   doc.history.push(historyItem(currentUser.id, "Sales amount added", "Submitted to Accounts."));
   notify("Accounts", `${doc.number} is waiting for billing.`);
@@ -719,7 +788,12 @@ function salesSubmit(form) {
 function accountsSubmit(form) {
   const doc = findDoc(form);
   const data = new FormData(form);
+  const equipment = readItems(form, doc.sales?.equipment || []);
   doc.accounts = { billingAmount: Number(data.get("billingAmount")), invoiceNumber: data.get("invoiceNumber"), remarks: data.get("remarks") };
+  if (equipment.length && doc.type === "doc1") {
+    doc.sales.equipment = equipment;
+    doc.sales.packageCost = equipment.reduce((total, item) => total + item.requestedQty * item.unitCost, 0);
+  }
   moveDoc(doc, "Pending Store", "Store");
   doc.history.push(historyItem(currentUser.id, "Billing added", "Submitted to Store."));
   notify("Store", `${doc.number} is waiting for stock validation.`);

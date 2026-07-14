@@ -350,10 +350,10 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     draw_label_value(pdf, "Location", doc["location"], 85 * mm, y, 52 * mm)
     draw_label_value(pdf, "Service", doc["service"], 143 * mm, y, 45 * mm)
     draw_label_value(pdf, "Contact", doc["contact"], 22 * mm, y - 18 * mm, 56 * mm)
-    draw_label_value(pdf, "Sales Amount", f"{doc.get('sales', {}).get('amount', '-')}", 85 * mm, y - 18 * mm, 52 * mm)
-    draw_label_value(pdf, "Billing Amount", f"{doc.get('accounts', {}).get('billingAmount', '-')}", 143 * mm, y - 18 * mm, 45 * mm)
-    draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("remarks", ""), 22 * mm, y - 36 * mm, 115 * mm)
-    draw_label_value(pdf, "Requested By", "Engineer", 143 * mm, y - 36 * mm, 45 * mm)
+    draw_label_value(pdf, "Installation Cost", f"{doc.get('sales', {}).get('amount', '-')}", 85 * mm, y - 18 * mm, 52 * mm)
+    draw_label_value(pdf, "MBR", f"{doc.get('sales', {}).get('mbr', doc.get('accounts', {}).get('billingAmount', '-'))}", 143 * mm, y - 18 * mm, 45 * mm)
+    draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
+    draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
 
     y -= 66 * mm
     pdf.setFont("Helvetica-Bold", 10)
@@ -740,10 +740,25 @@ def sales_submit(document_id: str):
         raise ValueError("Document 1 not found")
     require_status(doc, "Pending Sales", "Returned to Sales")
     payload = request.get_json(force=True)
+    client_name = require_text(payload, "clientName", "Client name")
+    location = require_text(payload, "location", "Location")
+    subscription = require_text(payload, "subscription", "Subscription")
+    equipment = deepcopy(doc.get("store", {}).get("items", []))
+    doc["clientName"] = client_name
+    doc["location"] = location
     doc["sales"] = {
+        "clientName": client_name,
+        "location": location,
+        "surveyFormNo": require_text(payload, "surveyFormNo", "Survey form number"),
         "amount": require_number(payload, "amount", "Sales total amount", minimum=0, allow_zero=False),
         "packageCost": require_number(payload, "packageCost", "Package cost", minimum=0) if payload.get("packageCost") not in (None, "") else 0,
-        "remarks": optional_text(payload, "remarks"),
+        "additionalNpr": require_number(payload, "additionalNpr", "Additional NPR", minimum=0),
+        "subscription": subscription,
+        "mbr": require_number(payload, "mbr", "MBR", minimum=0),
+        "requestedBy": require_text(payload, "requestedBy", "Requested by"),
+        "requestedDate": require_text(payload, "requestedDate", "Date", max_length=20),
+        "equipment": equipment,
+        "remarks": subscription,
     }
     set_route(doc, "Pending Accounts", "Accounts")
     doc["history"].append(history(user["id"], "Sales amount added", "Submitted to Accounts."))
@@ -773,6 +788,10 @@ def accounts_submit(document_id: str):
         doc["history"].append(history(user["id"], "Maintenance billing added", "Maintenance completed and returned to Engineer."))
         notify("Engineer", f"{doc['number']} maintenance request has been completed.")
     else:
+        source_equipment = payload.get("equipment") or doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
+        equipment = validate_items(source_equipment, require_cost=True, context="Account equipment")
+        doc.setdefault("sales", {})["equipment"] = equipment
+        doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
         set_route(doc, "Pending Store", "Store")
         doc["history"].append(history(user["id"], "Billing added", "Submitted to Store."))
         notify("Store", f"{doc['number']} is waiting for stock validation.")

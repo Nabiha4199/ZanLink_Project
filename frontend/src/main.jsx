@@ -399,10 +399,10 @@ function OnboardingPreview({ doc }) {
         <Field label="Location" value={doc.location} />
         <Field label="Installation Cost" value={money(doc.sales?.amount)} />
         <Field label="Equipment Cost" value={money(doc.sales?.packageCost)} />
-        <Field label="Subscription package" value={doc.sales?.remarks || doc.service} />
-        <Field label="MRR" value={money(doc.accounts?.billingAmount)} />
-        <Field label="Requested By" value="Engineer" />
-        <Field label="Date" value={formatDate(doc.createdAt)} />
+        <Field label="Subscription package" value={doc.sales?.subscription || doc.sales?.remarks || doc.service} />
+        <Field label="MBR" value={money(doc.sales?.mbr || doc.accounts?.billingAmount)} />
+        <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
+        <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
       </div>
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Reviewed by" value="Engineer" /></div>
@@ -456,27 +456,63 @@ function Doc1Actions({ user, doc, run }) {
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
   const managementOpen = canAct(user, "Management") && doc.status === "Pending Management";
-  const [sales, setSales] = useState({ amount: doc.sales?.amount || "", packageCost: doc.sales?.packageCost || "", remarks: doc.sales?.remarks || "" });
+  const salesOnly = user.role === "Sales";
+  const accountsOnly = user.role === "Accounts";
+  const [sales, setSales] = useState({
+    clientName: doc.sales?.clientName || doc.clientName || "",
+    location: doc.sales?.location || doc.location || "",
+    surveyFormNo: doc.sales?.surveyFormNo || doc.number || "",
+    amount: doc.sales?.amount || "",
+    packageCost: doc.sales?.packageCost || "",
+    additionalNpr: doc.sales?.additionalNpr || "",
+    subscription: doc.sales?.subscription || doc.sales?.remarks || doc.service || "",
+    mbr: doc.sales?.mbr || doc.accounts?.billingAmount || "",
+    requestedBy: doc.sales?.requestedBy || user.name || "",
+    requestedDate: doc.sales?.requestedDate || new Date().toISOString().slice(0, 10),
+  });
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
+  const engineerEquipment = doc.store?.items || [];
+  const [accountEquipment, setAccountEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const [items, setItems] = useState(doc.store?.items || []);
   const [storeRemarks, setStoreRemarks] = useState(doc.store?.remarks || "");
   const [managementRemarks, setManagementRemarks] = useState(doc.management?.remarks || "");
 
   return (
     <>
-      <ActionPanel title="Sales Section" enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, sales), "Moved to Accounts.")}>
-        <div className="form-grid">{numberInput("Total Amount", "amount", sales, setSales, !salesOpen)}{numberInput("Package Cost", "packageCost", sales, setSales, !salesOpen)}<label className="wide">Remarks<textarea disabled={!salesOpen} value={sales.remarks} onChange={(e) => setSales({ ...sales, remarks: e.target.value })} /></label></div>
+      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, sales), "Moved to Accounts.")}>
+        <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
+        <div className="form-grid">
+          {textInput("Client Name", "clientName", sales, setSales, !salesOpen)}
+          {textInput("Location", "location", sales, setSales, !salesOpen)}
+          {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
+          {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
+          {numberInput("Total Equipment Cost", "packageCost", sales, setSales, !salesOpen)}
+          {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
+          {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
+          {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
+          {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
+          <label>Date<input type="date" disabled={!salesOpen} required value={sales.requestedDate} onChange={(event) => setSales({ ...sales, requestedDate: event.target.value })} /></label>
+        </div>
       </ActionPanel>
-      <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
-        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
-      </ActionPanel>
-      <ActionPanel title="Store Confirmation" enabled={storeOpen} actionLabel="Confirm Stock and Validate" onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
-        <ItemEditor items={items} setItems={setItems} locked={!storeOpen} />
-        <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>
-      </ActionPanel>
-      <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
-        <label>Approval Notes<textarea disabled={!managementOpen} value={managementRemarks} onChange={(e) => setManagementRemarks(e.target.value)} /></label>
-      </ActionPanel>
+      {!salesOnly && (
+        <>
+          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, { ...accounts, equipment: accountEquipment }), "Moved to Store.")}>
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+            <EquipmentCostEditor items={accountEquipment} setItems={setAccountEquipment} locked={!accountsOpen} />
+          </ActionPanel>
+          {!accountsOnly && (
+            <>
+              <ActionPanel title="Store Confirmation" enabled={storeOpen} actionLabel="Confirm Stock and Validate" onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
+                <ItemEditor items={items} setItems={setItems} locked={!storeOpen} />
+                <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>
+              </ActionPanel>
+              <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
+                <label>Approval Notes<textarea disabled={!managementOpen} value={managementRemarks} onChange={(e) => setManagementRemarks(e.target.value)} /></label>
+              </ActionPanel>
+            </>
+          )}
+        </>
+      )}
     </>
   );
 }
@@ -484,14 +520,17 @@ function Doc1Actions({ user, doc, run }) {
 function MaintenanceActions({ user, doc, run }) {
   const hodOpen = canAct(user, "HOD") && doc.status === "Pending HOD";
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
+  const accountsOnly = user.role === "Accounts";
   const [hodRemarks, setHodRemarks] = useState(doc.hod?.remarks || "");
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   return (
     <>
       <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
-      <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
-        <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
-      </ActionPanel>
+      {!accountsOnly && (
+        <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
+          <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
+        </ActionPanel>
+      )}
       <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Maintenance completed.")}>
         <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
       </ActionPanel>
@@ -502,29 +541,72 @@ function MaintenanceActions({ user, doc, run }) {
 function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
   return (
     <form className="panel" onSubmit={(event) => { event.preventDefault(); onAction(); }}>
-      <div className="section-title"><h2>{title}</h2></div>
+      {title && <div className="section-title"><h2>{title}</h2></div>}
       {children}
       {enabled && <div className="button-row"><button className="btn">{actionLabel}</button></div>}
     </form>
   );
 }
 
-function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false }) {
+function EquipmentCostEditor({ items, setItems, locked = false }) {
+  function update(index, value) {
+    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
+  }
+  if (!items.length) return <div className="empty">No sales equipment added.</div>;
+  return (
+    <div className="items-list">
+      <div className="section-title"><h2>Equipment Costs</h2></div>
+      {items.map((item, index) => (
+        <div className="item-row" key={index}>
+          <label>Item<input disabled value={item.name || ""} readOnly /></label>
+          <label>Req. Qty<input disabled type="number" value={item.requestedQty || 1} readOnly /></label>
+          <label>Unit Cost<input required min="0" type="number" disabled={locked} value={item.unitCost || ""} onChange={(event) => update(index, event.target.value)} /></label>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReadOnlyEquipment({ title, items }) {
+  if (!items.length) return <div className="empty">No equipment added by Engineer.</div>;
+  return (
+    <div className="readonly-equipment">
+      <div className="section-title"><h2>{title}</h2></div>
+      <div className="readonly-equipment-list">
+        {items.map((item, index) => (
+          <div className="readonly-equipment-row" key={index}>
+            <div className="readonly-equipment-main">
+              <span>Item</span>
+              <strong>{item.name || "-"}</strong>
+            </div>
+            <div className="readonly-equipment-meta">
+              <span><b>Req. Qty</b>{item.requestedQty || 1}</span>
+              <span><b>Purpose</b>{item.purpose || "-"}</span>
+              <span><b>Serial No.</b>{item.serialNumber || "-"}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false }) {
   if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} />;
   function update(index, key, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key.includes("Qty") || key === "unitCost" ? Number(value) : value } : item));
   }
   return (
     <div className="items-list">
-      <div className="section-title"><h2>Stock Items</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>Add Item</button>}</div>
+      <div className="section-title"><h2>{title}</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>{addLabel}</button>}</div>
       {items.map((item, index) => (
         <div className="item-row" key={index}>
-          <label>Item<input required disabled={locked && !requestMode} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></label>
-          <label>Req. Qty<input required min="1" type="number" disabled={locked && !requestMode} value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} /></label>
+          <label>Item<input required disabled={locked} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></label>
+          <label>Req. Qty<input required min="1" type="number" disabled={locked} value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} /></label>
           <label>Issued Qty<input min="0" type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></label>
           <label>Serial No.<input disabled={locked} value={item.serialNumber} onChange={(e) => update(index, "serialNumber", e.target.value)} /></label>
           <label>Purpose<input disabled={locked} value={item.purpose} onChange={(e) => update(index, "purpose", e.target.value)} /></label>
-          <label>Unit Cost<input min="0" type="number" disabled={locked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></label>
+          <label>Unit Cost<input min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></label>
         </div>
       ))}
     </div>

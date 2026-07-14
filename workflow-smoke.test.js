@@ -78,21 +78,45 @@ const doc = state.documents[0];
 assert.strictEqual(doc.status, "Pending Sales");
 
 currentUser = USERS.find((user) => user.username === "sales");
-salesSubmit(fakeForm(doc.id, { amount: 1000, packageCost: 900, remarks: "ok" }));
+salesSubmit(fakeForm(doc.id, {
+  clientName: "Test Client",
+  location: "Zanzibar",
+  surveyFormNo: "REQ-TEST",
+  amount: 1000,
+  packageCost: 900,
+  additionalNpr: 0,
+  subscription: "Business package",
+  mbr: 1000,
+  requestedBy: "Sales Team",
+  requestedDate: "2026-07-14"
+}));
 assert.strictEqual(doc.status, "Pending Accounts");
+assert.strictEqual(doc.sales.equipment[0].unitCost, 100);
 
 currentUser = USERS.find((user) => user.username === "accounts");
-accountsSubmit(fakeForm(doc.id, { billingAmount: 999, invoiceNumber: "INV-X", remarks: "mismatch" }));
+accountsSubmit(fakeForm(doc.id, { billingAmount: 999, invoiceNumber: "INV-X", remarks: "mismatch" }, [fakeRow({ itemName: "Router", requestedQty: 1, unitCost: 900 })]));
 assert.strictEqual(doc.status, "Pending Store");
+assert.strictEqual(doc.sales.equipment[0].unitCost, 900);
 
 currentUser = USERS.find((user) => user.username === "store");
 storeSubmit(fakeForm(doc.id, { remarks: "amount mismatch" }, [fakeRow({ itemName: "Router", requestedQty: 1, issuedQty: 1, serialNumber: "R-1", purpose: "CPE", unitCost: 100 })]));
 assert.strictEqual(doc.status, "Returned to Sales");
 
 currentUser = USERS.find((user) => user.username === "sales");
-salesSubmit(fakeForm(doc.id, { amount: 1000, packageCost: 900, remarks: "corrected" }));
+salesSubmit(fakeForm(doc.id, {
+  clientName: "Test Client",
+  location: "Zanzibar",
+  surveyFormNo: "REQ-TEST",
+  amount: 1000,
+  packageCost: 900,
+  additionalNpr: 0,
+  subscription: "Business package",
+  mbr: 1000,
+  requestedBy: "Sales Team",
+  requestedDate: "2026-07-14"
+}));
 currentUser = USERS.find((user) => user.username === "accounts");
-accountsSubmit(fakeForm(doc.id, { billingAmount: 1000, invoiceNumber: "INV-X2", remarks: "matched" }));
+accountsSubmit(fakeForm(doc.id, { billingAmount: 1000, invoiceNumber: "INV-X2", remarks: "matched" }, [fakeRow({ itemName: "Router", requestedQty: 1, unitCost: 900 })]));
 currentUser = USERS.find((user) => user.username === "store");
 storeSubmit(fakeForm(doc.id, { remarks: "stock issued" }, [fakeRow({ itemName: "Router", requestedQty: 1, issuedQty: 1, serialNumber: "R-2", purpose: "CPE", unitCost: 100 })]));
 assert.strictEqual(doc.status, "Pending Management");
