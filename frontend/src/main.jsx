@@ -192,7 +192,7 @@ function DocumentTable({ user, documents, onOpen }) {
         <thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Current Department</th><th>Action</th></tr></thead>
         <tbody>
           {documents.map((doc) => {
-            const engineerTracking = user.role === "Engineer" && doc.type === "doc1" && !["Draft", "Completed"].includes(doc.status);
+            const engineerTracking = user.role === "Engineer" && !["Draft", "Completed"].includes(doc.status);
             return (
               <React.Fragment key={doc.id}>
                 <tr>
@@ -203,7 +203,7 @@ function DocumentTable({ user, documents, onOpen }) {
                   <td>{doc.currentDepartment}</td>
                   <td>{!engineerTracking && <button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button>}</td>
                 </tr>
-                {engineerTracking && <tr><td colSpan="6"><WorkflowTracker status={doc.status} /></td></tr>}
+                {engineerTracking && <tr><td colSpan="6"><WorkflowTracker type={doc.type} status={doc.status} /></td></tr>}
               </React.Fragment>
             );
           })}
@@ -565,8 +565,12 @@ function EngineerItemEditor({ items, setItems }) {
   );
 }
 
-function WorkflowTracker({ status }) {
-  const stages = [
+function WorkflowTracker({ type, status }) {
+  const stages = type === "maintenance" ? [
+    ["Engineer Section", null],
+    ["HOD Approval", "Pending HOD"],
+    ["Accounts Section", "Pending Accounts"],
+  ] : [
     ["Engineer Section", null],
     ["Sales Section", "Pending Sales"],
     ["Accounts Section", "Pending Accounts"],
