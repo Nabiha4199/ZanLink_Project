@@ -4,6 +4,57 @@
   min-height: 100vh;
 }
 
+.engineer-items-table table {
+  min-width: 720px;
+}
+
+.engineer-items-table td input,
+.engineer-items-table td select {
+  min-width: 140px;
+}
+
+.engineer-items-table td:first-child {
+  width: 64px;
+}
+
+.engineer-add-item {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px;
+}
+
+.workflow-tracker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  min-width: 800px;
+  padding: 4px 0;
+}
+
+.workflow-tracker > strong {
+  grid-column: 1 / -1;
+}
+
+.workflow-step {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--muted);
+}
+
+.workflow-step.completed {
+  color: var(--ok);
+}
+
+.workflow-step.pending {
+  color: var(--accent);
+}
+
+.workflow-step small {
+  grid-column: 2;
+}
+
 .panel h2 {
   margin-top: 0;
 }

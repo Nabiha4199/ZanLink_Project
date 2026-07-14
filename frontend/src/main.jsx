@@ -14,6 +14,11 @@ const demoUsers = [
 ];
 
 const emptyItem = { name: "", requestedQty: 1, issuedQty: 0, serialNumber: "", purpose: "", unitCost: 0 };
+const engineerStockItems = [
+  { id: "NET-001", description: "UTP Network Cable CAT6" },
+  { id: "FIB-001", description: "Fibre Optic Drop Cable" },
+  { id: "RTR-001", description: "Network Router" },
+];
 const serviceTypes = [
   ["new_installation", "New Installation"],
   ["reconnection", "Reconnection"],
@@ -174,28 +179,34 @@ function Dashboard({ user, documents, filters, setFilters, onOpen, onCreateDoc1,
         <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
         <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
       </section>
-      <DocumentTable documents={documents} onOpen={onOpen} />
+      <DocumentTable user={user} documents={documents} onOpen={onOpen} />
     </>
   );
 }
 
-function DocumentTable({ documents, onOpen }) {
+function DocumentTable({ user, documents, onOpen }) {
   if (!documents.length) return <div className="panel empty">No documents match this view.</div>;
   return (
     <div className="table-wrap">
       <table>
         <thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Current Department</th><th>Action</th></tr></thead>
         <tbody>
-          {documents.map((doc) => (
-            <tr key={doc.id}>
-              <td><strong>{doc.number}</strong></td>
-              <td>{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
-              <td>{doc.clientName}<br /><small>{doc.location}</small></td>
-              <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
-              <td>{doc.currentDepartment}</td>
-              <td><button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button></td>
-            </tr>
-          ))}
+          {documents.map((doc) => {
+            const engineerTracking = user.role === "Engineer" && doc.type === "doc1" && !["Draft", "Completed"].includes(doc.status);
+            return (
+              <React.Fragment key={doc.id}>
+                <tr>
+                  <td><strong>{doc.number}</strong></td>
+                  <td>{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
+                  <td>{doc.clientName}<br /><small>{doc.location}</small></td>
+                  <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
+                  <td>{doc.currentDepartment}</td>
+                  <td>{!engineerTracking && <button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button>}</td>
+                </tr>
+                {engineerTracking && <tr><td colSpan="6"><WorkflowTracker status={doc.status} /></td></tr>}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -227,7 +238,7 @@ function Doc1Form({ onSubmit, onCancel }) {
         </label>
         <label className="wide">Engineer Notes<textarea value={form.engineerNotes} onChange={(event) => setForm({ ...form, engineerNotes: event.target.value })} /></label>
       </div>
-      <ItemEditor items={form.items} setItems={(items) => setForm({ ...form, items })} requestMode />
+      <ItemEditor items={form.items} setItems={(items) => setForm({ ...form, items })} engineerRequest />
     </FormShell>
   );
 }
@@ -498,7 +509,8 @@ function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
   );
 }
 
-function ItemEditor({ items, setItems, locked = false, requestMode = false }) {
+function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false }) {
+  if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} />;
   function update(index, key, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key.includes("Qty") || key === "unitCost" ? Number(value) : value } : item));
   }
@@ -516,6 +528,57 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function EngineerItemEditor({ items, setItems }) {
+  function updateDescription(index, description) {
+    const selected = engineerStockItems.find((item) => item.description === description);
+    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, name: description, serialNumber: selected?.id || "" } : item));
+  }
+
+  function updateQuantity(index, value) {
+    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, requestedQty: Number(value) } : item));
+  }
+
+  return (
+    <div className="items-list">
+      <div className="section-title"><h2>Stock Items</h2></div>
+      <div className="table-wrap engineer-items-table">
+        <table>
+          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Action</th></tr></thead>
+          <tbody>
+            {items.map((item, index) => (
+              <tr key={index}>
+                <td>{index + 1}</td>
+                <td><input readOnly value={item.serialNumber} /></td>
+                <td><select required value={item.name} onChange={(event) => updateDescription(index, event.target.value)}><option value="">Select equipment/material</option>{engineerStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}</select></td>
+                <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(index, event.target.value)} /></td>
+                <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="engineer-add-item"><button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>+ Add Item</button></div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowTracker({ status }) {
+  const stages = [
+    ["Engineer Section", null],
+    ["Sales Section", "Pending Sales"],
+    ["Accounts Section", "Pending Accounts"],
+    ["Store Section", "Pending Store"],
+    ["Management Approval", "Pending Management"],
+  ];
+  const currentIndex = Math.max(1, stages.findIndex(([, pendingStatus]) => pendingStatus === status));
+  return (
+    <div className="workflow-tracker"><strong>Workflow Progress</strong>{stages.map(([label], index) => {
+      const state = status === "Completed" || index < currentIndex ? "Completed" : index === currentIndex ? "Pending" : "Not Started";
+      return <div className={`workflow-step ${state.toLowerCase().replace(" ", "-")}`} key={label}><span>{state === "Completed" ? "✓" : state === "Pending" ? "⏳" : "○"}</span><b>{label}</b><small>{state}</small></div>;
+    })}</div>
   );
 }
 
