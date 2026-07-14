@@ -161,6 +161,26 @@
   color: white;
 }
 
+.store-equipment-table,
+.stock-items-table {
+  min-width: 600px;
+}
+
+.store-equipment-table th,
+.store-equipment-table td,
+.stock-items-table th,
+.stock-items-table td {
+  vertical-align: middle;
+}
+
+.stock-items-table {
+  min-width: 980px;
+}
+
+.stock-items-table input {
+  min-width: 110px;
+}
+
 .check-row {
   display: flex;
   flex-wrap: wrap;

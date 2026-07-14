@@ -61,6 +61,11 @@ function App() {
     setTimeout(() => setMessage(""), 3200);
   }
 
+  function navigate(nextView) {
+    setSelectedId(null);
+    setView(nextView);
+  }
+
   async function run(action, success) {
     try {
       await action();
@@ -82,11 +87,11 @@ function App() {
         <div className="brand"><div className="brand-mark">Z</div><strong>Zanlink Flow</strong></div>
         <div className="user-box"><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>
         <nav className="nav">
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => { setView("dashboard"); setSelectedId(null); }}>Dashboard</button>
-          {canCreate(user) && <button className={view === "doc1" ? "active" : ""} onClick={() => setView("doc1")}>New Onboarding</button>}
-          {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => setView("maintenance")}>New Maintenance</button>}
-          <button className={view === "summaries" ? "active" : ""} onClick={() => setView("summaries")}>Client Summaries</button>
-          <button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button>
+          <button className={view === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}>Dashboard</button>
+          {canCreate(user) && <button className={view === "doc1" ? "active" : ""} onClick={() => navigate("doc1")}>New Onboarding</button>}
+          {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => navigate("maintenance")}>New Maintenance</button>}
+          <button className={view === "summaries" ? "active" : ""} onClick={() => navigate("summaries")}>Client Summaries</button>
+          <button className={view === "reports" ? "active" : ""} onClick={() => navigate("reports")}>Reports</button>
         </nav>
         <button className="logout" onClick={() => { localStorage.removeItem("zanlink-user"); setUser(null); }}>Sign out</button>
       </aside>
@@ -94,9 +99,9 @@ function App() {
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
         ) : view === "doc1" ? (
-          <Doc1Form onCancel={() => setView("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
+          <Doc1Form onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
         ) : view === "maintenance" ? (
-          <MaintenanceForm onCancel={() => setView("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
+          <MaintenanceForm onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
         ) : view === "summaries" ? (
           <Summaries user={user} summaries={summaries} documents={documents} refresh={refresh} showError={showError} />
         ) : view === "reports" ? (
@@ -111,8 +116,8 @@ function App() {
               refresh(next).catch(showError);
             }}
             onOpen={setSelectedId}
-            onCreateDoc1={() => setView("doc1")}
-            onCreateMaintenance={() => setView("maintenance")}
+            onCreateDoc1={() => navigate("doc1")}
+            onCreateMaintenance={() => navigate("maintenance")}
           />
         )}
       </main>
@@ -273,12 +278,15 @@ function FormShell({ title, subtitle, children, submitLabel, onSubmit, onCancel 
 }
 
 function DocumentDetail({ user, doc, onBack, run }) {
-  const engineerCompleted = doc.type === "doc1" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
+  const managementReview = doc.type === "doc1" && (user.role === "Management" || user.department === "Management");
+  const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || doc.workflowCompletedAt) && (user.role === "Engineer" || user.role === "System Admin");
   const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
   return (
     <>
       <div className="topbar"><div className="page-title"><h1>{doc.number}</h1><p>{doc.clientName} / {doc.service}</p></div><button className="btn secondary" onClick={onBack}>Back</button></div>
-      {engineerCompleted ? (
+      {managementReview ? (
+        <ManagementReview user={user} doc={doc} run={run} />
+      ) : engineerCompleted ? (
         <CompletedEngineerDocuments user={user} doc={doc} />
       ) : maintenanceCompleted ? (
         <MaintenanceCertificate user={user} doc={doc} />
@@ -290,6 +298,20 @@ function DocumentDetail({ user, doc, onBack, run }) {
         </>
       )}
     </>
+  );
+}
+
+function ManagementReview({ user, doc, run }) {
+  const pending = doc.status === "Pending Management";
+  return (
+    <ActionPanel title="Store Manager Submission" enabled={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, {}), "Document approved and completed.")}>
+      <div className="form-grid">
+        <p><strong>Submitted By</strong><br />Store Manager</p>
+        <p><strong>Submitted At</strong><br />{doc.store?.approvedAt ? formatDate(doc.store.approvedAt) : "-"}</p>
+        <p><strong>Status</strong><br /><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></p>
+      </div>
+      <ItemEditor items={doc.store?.items || []} setItems={() => {}} locked storeMode />
+    </ActionPanel>
   );
 }
 
@@ -367,6 +389,7 @@ function CompletedEngineerDocuments({ user, doc }) {
         <div>
           <h2>Completed Client Documents</h2>
           <p>{doc.clientName} now has the final onboarding and stock requisition documents ready for download.</p>
+          <span className={`status ${statusClass(doc.status)}`}>{doc.status}</span>
         </div>
         <div className="button-row">
           <button className="btn" onClick={() => download("onboarding", `${doc.clientName}_onboarding.pdf`)}>Download Onboarding PDF</button>
@@ -407,7 +430,7 @@ function OnboardingPreview({ doc }) {
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Reviewed by" value="Engineer" /></div>
       <h3>Management Approval</h3>
-      <div className="paper-fields two"><Field label="Approved By" value="Management" /><Field label="Comments" value={doc.management?.remarks || "Approved"} /></div>
+      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? "Management" : "Pending Management"} /><Field label="Comments" value={doc.management?.approvedBy ? (doc.management?.remarks || "Approved") : "Approval optional"} /></div>
       <h3>Admin Stock Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value="Store" /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
       <h3>Finance & Billing</h3>
@@ -452,6 +475,7 @@ function Signature({ label, name, position }) {
 }
 
 function Doc1Actions({ user, doc, run }) {
+  const storeManager = user.department === "Store" || ["Store", "Store Manager"].includes(user.role);
   const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales"].includes(doc.status);
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
@@ -502,13 +526,15 @@ function Doc1Actions({ user, doc, run }) {
           </ActionPanel>
           {!accountsOnly && (
             <>
-              <ActionPanel title="Store Confirmation" enabled={storeOpen} actionLabel="Confirm Stock and Validate" onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
-                <ItemEditor items={items} setItems={setItems} locked={!storeOpen} />
-                <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>
+              <ActionPanel title="Store Section" enabled={storeOpen} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
+                <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
+                {!storeManager && <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>}
               </ActionPanel>
-              <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
-                <label>Approval Notes<textarea disabled={!managementOpen} value={managementRemarks} onChange={(e) => setManagementRemarks(e.target.value)} /></label>
-              </ActionPanel>
+              {!storeManager && (
+                <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
+                  <label>Approval Notes<textarea disabled={!managementOpen} value={managementRemarks} onChange={(e) => setManagementRemarks(e.target.value)} /></label>
+                </ActionPanel>
+              )}
             </>
           )}
         </>
@@ -591,24 +617,57 @@ function ReadOnlyEquipment({ title, items }) {
   );
 }
 
-function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false }) {
+function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false, storeMode = false }) {
   if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} />;
   function update(index, key, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key.includes("Qty") || key === "unitCost" ? Number(value) : value } : item));
   }
+
+  if (storeMode) {
+    return (
+      <div className="items-list">
+        <div className="section-title"><h2>Required Equipment</h2></div>
+        <div className="table-wrap">
+          <table className="store-equipment-table">
+            <thead>
+              <tr><th>No.</th><th>Requested Equipment</th><th>Requested Quantity</th><th>Issued Quantity</th></tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={index}>
+                  <td>{index + 1}</td>
+                  <td><strong>{item.name}</strong></td>
+                  <td>{item.requestedQty}</td>
+                  <td><input aria-label={`Issued quantity for ${item.name}`} required min="0" max={item.requestedQty} type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="items-list">
       <div className="section-title"><h2>{title}</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>{addLabel}</button>}</div>
-      {items.map((item, index) => (
-        <div className="item-row" key={index}>
-          <label>Item<input required disabled={locked} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></label>
-          <label>Req. Qty<input required min="1" type="number" disabled={locked} value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} /></label>
-          <label>Issued Qty<input min="0" type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></label>
-          <label>Serial No.<input disabled={locked} value={item.serialNumber} onChange={(e) => update(index, "serialNumber", e.target.value)} /></label>
-          <label>Purpose<input disabled={locked} value={item.purpose} onChange={(e) => update(index, "purpose", e.target.value)} /></label>
-          <label>Unit Cost<input min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></label>
-        </div>
-      ))}
+      <div className="table-wrap">
+        <table className="stock-items-table">
+          <thead><tr><th>Item</th><th>Requested Qty</th><th>Issued Qty</th><th>Serial No.</th><th>Purpose</th><th>Unit Cost</th></tr></thead>
+          <tbody>
+            {items.map((item, index) => (
+              <tr key={index}>
+                <td><input aria-label={`Item ${index + 1}`} required disabled={locked} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></td>
+                <td><input aria-label={`Requested quantity for item ${index + 1}`} required min="1" type="number" disabled={locked} value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} /></td>
+                <td><input aria-label={`Issued quantity for item ${index + 1}`} min="0" type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
+                <td><input aria-label={`Serial number for item ${index + 1}`} disabled={locked} value={item.serialNumber} onChange={(e) => update(index, "serialNumber", e.target.value)} /></td>
+                <td><input aria-label={`Purpose for item ${index + 1}`} disabled={locked} value={item.purpose} onChange={(e) => update(index, "purpose", e.target.value)} /></td>
+                <td><input aria-label={`Unit cost for item ${index + 1}`} min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

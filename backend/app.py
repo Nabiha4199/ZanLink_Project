@@ -251,8 +251,10 @@ def generate_summary(doc: dict) -> dict:
 
 
 def visible_documents_for(user: dict) -> list[dict]:
-    if user["role"] in {"System Admin", "Management"}:
+    if user["role"] == "System Admin":
         return STATE["documents"]
+    if user["role"] == "Management" or user["department"] == "Management":
+        return [doc for doc in STATE["documents"] if doc.get("workflowCompletedAt") or (doc.get("type") == "doc1" and doc.get("status") == "Completed")]
     return [
         doc
         for doc in STATE["documents"]
@@ -261,7 +263,9 @@ def visible_documents_for(user: dict) -> list[dict]:
 
 
 def ensure_document_access(user: dict, doc: dict) -> None:
-    if user["role"] in {"System Admin", "Management"}:
+    if user["role"] == "System Admin":
+        return
+    if (user["role"] == "Management" or user["department"] == "Management") and (doc.get("workflowCompletedAt") or (doc.get("type") == "doc1" and doc.get("status") == "Completed")):
         return
     if doc["createdBy"] == user["id"] or doc["currentDepartment"] == user["department"] or doc["status"] == "Completed":
         return
@@ -273,7 +277,7 @@ def require_completed_doc1(user: dict, document_id: str) -> dict:
     if not doc or doc["type"] != "doc1":
         raise ValueError("Completed Document 1 not found")
     ensure_document_access(user, doc)
-    if doc["status"] != "Completed":
+    if doc["status"] != "Completed" and not doc.get("workflowCompletedAt"):
         raise ValueError("Final PDFs are available only after the document is completed")
     return doc
 
@@ -364,8 +368,9 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Management Approval")
-    draw_label_value(pdf, "Approved By", "Management", 22 * mm, y - 4, 56 * mm)
-    draw_label_value(pdf, "Comments", doc.get("management", {}).get("remarks", ""), 85 * mm, y - 4, 103 * mm)
+    management_approved = bool(doc.get("management", {}).get("approvedBy"))
+    draw_label_value(pdf, "Approved By", "Management" if management_approved else "Pending Management", 22 * mm, y - 4, 56 * mm)
+    draw_label_value(pdf, "Comments", doc.get("management", {}).get("remarks", "") if management_approved else "Approval optional", 85 * mm, y - 4, 103 * mm)
 
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
@@ -807,14 +812,31 @@ def store_submit(document_id: str):
         raise ValueError("Document 1 not found")
     require_status(doc, "Pending Store")
     payload = request.get_json(force=True)
-    items = validate_items(payload.get("items", []), require_issued=True, context="Issued stock item")
+    items = deepcopy(doc.get("store", {}).get("items", []))
+    submitted_items = payload.get("items")
+    if not isinstance(submitted_items, list) or len(submitted_items) != len(items):
+        raise ValueError("Issued quantities must be provided for every requested equipment item")
+    for index, item in enumerate(items, start=1):
+        issued_qty = require_number(submitted_items[index - 1], "issuedQty", f"Equipment {index} issued quantity", minimum=0)
+        if issued_qty > float(item.get("requestedQty") or 0):
+            raise ValueError(f"Equipment {index} issued quantity cannot exceed requested quantity")
+        item["issuedQty"] = issued_qty
     matches = float(doc.get("sales", {}).get("amount") or 0) == float(doc.get("accounts", {}).get("billingAmount") or 0)
-    doc["store"] = {"confirmed": matches, "amountMatches": matches, "remarks": optional_text(payload, "remarks"), "items": items}
+    doc["store"] = {
+        "confirmed": matches,
+        "amountMatches": matches,
+        "approvedBy": user["id"],
+        "approvedAt": now_iso(),
+        "remarks": doc.get("store", {}).get("remarks", ""),
+        "items": items,
+    }
     if matches:
+        doc["workflowCompletedAt"] = now_iso()
         set_route(doc, "Pending Management", "Management")
         generate_summary(doc)
-        doc["history"].append(history(user["id"], "Store confirmed stock and amount match", "Client summary generated."))
-        notify("Management", f"{doc['number']} is waiting for approval.")
+        doc["history"].append(history(user["id"], "Store completed the workflow", "Client summary generated; Management approval remains optional."))
+        notify("Management", f"{doc['number']} is complete and awaiting optional approval.")
+        notify("Engineer", f"{doc['number']} is complete; Management approval is still pending.")
     else:
         set_route(doc, "Returned to Sales", "Sales")
         doc["history"].append(history(user["id"], "Returned to Sales", "Sales and Accounts amounts do not match."))
