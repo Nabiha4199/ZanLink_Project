@@ -43,7 +43,7 @@ const context = {
   window: { print: () => {} }
 };
 
-const appCode = fs.readFileSync("app.js", "utf8");
+const appCode = fs.readFileSync("legacy/app.js", "utf8");
 const smoke = `
 function fakeForm(id, data, rows) {
   return {

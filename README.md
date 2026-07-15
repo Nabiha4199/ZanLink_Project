@@ -1,63 +1,62 @@
 # Zanlink Document Flow System
 
-This project is being moved from the first static demo into a React frontend and Flask backend.
+A client/server workflow application built with React, Vite, Flask, and ReportLab.
 
-## Current Structure
+## Project structure
 
-- `frontend/` - React app built with Vite.
-- `backend/` - Flask API with in-memory workflow data.
-- `index.html`, `app.js`, `styles.css` - original static demo kept for reference.
-- `workflow-smoke.test.js` - smoke test for the original static workflow.
+```text
+.
+├── client/                 # React client application
+│   └── src/
+│       ├── components/     # Reusable UI
+│       ├── config/         # Workflow constants
+│       ├── pages/          # Application pages
+│       ├── services/       # HTTP API client
+│       └── utils/          # Formatting and permissions
+├── server/                 # Flask API and PDF generation
+├── legacy/                 # Original static prototype
+└── workflow-smoke.test.js  # Legacy workflow regression test
+```
 
-## Run Backend
+## Start the server
 
-Python must be installed before using `requirements.txt`. Use Python `3.11+`.
+Python 3.11 or newer is required.
 
 ```bash
-cd backend
+cd server
 python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-Backend URL: `http://localhost:5000`
+The API runs at `http://localhost:5000`.
 
-For hosting services that read runtime files, the backend also includes `backend/runtime.txt`.
+## Start the client
 
-## Run Frontend
+In a second terminal:
 
 ```bash
-cd frontend
+cd client
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-Frontend URL: `http://localhost:5173`
+The client runs at `http://localhost:5173`.
 
-## Demo Accounts
+## Demo accounts
 
-All demo accounts use password `demo123`.
+All demo accounts use password `demo123`: `engineer`, `sales`, `accounts`, `store`, `management`, `hod`, and `admin`.
 
-- `engineer`
-- `sales`
-- `accounts`
-- `store`
-- `management`
-- `hod`
-- `admin`
+## Validation
 
-## What Is Included
+```bash
+cd client && npm run build
+cd ..
+python3 -m py_compile server/app.py server/wsgi.py
+node workflow-smoke.test.js
+```
 
-- Login with demo users for all departments.
-- Role-aware dashboard with status counts, search, filters, and document visibility.
-- Document 1 workflow: Engineer -> Sales -> Accounts -> Store -> Management -> Engineer.
-- Store amount validation: matching amounts move to Management, mismatches return to Sales.
-- Automatic Client Summary generation using `Zanlink/000001` style numbering.
-- Document 3 maintenance workflow: Engineer -> HOD -> Accounts -> Engineer.
-- Audit trail for every major workflow movement.
-- Print / Save PDF support through the browser print dialog.
-
-## Database Later
-
-The Flask backend currently stores data in memory. When we discuss the database, the natural next step is to replace the in-memory `STATE` object in `backend/app.py` with database models and repositories while keeping the API routes and React screens mostly stable.
+The server currently stores workflow state in memory. A future persistence layer can replace `STATE` in `server/app.py` without changing the client API service.

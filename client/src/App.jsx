@@ -1,29 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { createRoot } from "react-dom/client";
-import { api } from "./api";
-import "./styles.css";
-
-const demoUsers = [
-  ["engineer", "Engineer"],
-  ["sales", "Sales"],
-  ["accounts", "Accounts"],
-  ["store", "Store"],
-  ["management", "Management"],
-  ["hod", "Head of Department"],
-  ["admin", "System Admin"],
-];
-
-const emptyItem = { itemId: "", name: "", requestedQty: 1, issuedQty: 0, serialNumber: "", purpose: "", unitCost: 0 };
-const engineerStockItems = [
-  { id: "NET-001", description: "UTP Network Cable CAT6" },
-  { id: "FIB-001", description: "Fibre Optic Drop Cable" },
-  { id: "RTR-001", description: "Network Router" },
-];
-const serviceTypes = [
-  ["new_installation", "New Installation"],
-  ["reconnection", "Reconnection"],
-  ["wifi_extension", "WiFi Extension"],
-];
+import React, { useEffect, useState } from "react";
+import Field from "./components/common/Field";
+import Sidebar from "./components/layout/Sidebar";
+import { emptyItem, engineerStockItems, serviceTypes } from "./config/workflow";
+import ClientSummariesPage from "./pages/ClientSummariesPage";
+import DashboardPage from "./pages/DashboardPage";
+import LoginPage from "./pages/LoginPage";
+import ReportsPage from "./pages/ReportsPage";
+import { api } from "./services/api";
+import { formatDate, money } from "./utils/formatters";
+import { canAct, statusClass } from "./utils/permissions";
 
 function App() {
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("zanlink-user") || "null"));
@@ -81,28 +66,14 @@ function App() {
 
   if (!user) return (
     <>
-      <Login onLogin={setUser} showError={showError} />
+      <LoginPage onLogin={setUser} showError={showError} />
       {message && <div className="toast">{message}</div>}
     </>
   );
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">Z</div><strong>Zanlink Flow</strong></div>
-        <div className="user-box">
-          <div className="user-avatar">{user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</div>
-          <div><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>
-        </div>
-        <nav className="nav">
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}><span className="nav-icon">⌂</span>Dashboard</button>
-          {canCreate(user) && <button className={view === "doc1" ? "active" : ""} onClick={() => navigate("doc1")}><span className="nav-icon">＋</span>New Onboarding</button>}
-          {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => navigate("maintenance")}><span className="nav-icon">◇</span>New Maintenance</button>}
-          <button className={view === "summaries" ? "active" : ""} onClick={() => navigate("summaries")}><span className="nav-icon">▤</span>Client Summaries</button>
-          <button className={view === "reports" ? "active" : ""} onClick={() => navigate("reports")}><span className="nav-icon">▦</span>Reports</button>
-        </nav>
-        <button className="logout" onClick={() => { localStorage.removeItem("zanlink-user"); setUser(null); }}><span className="nav-icon">↪</span>Sign out</button>
-      </aside>
+      <Sidebar user={user} view={view} onNavigate={navigate} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
       <main className="main">
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
@@ -111,11 +82,11 @@ function App() {
         ) : view === "maintenance" ? (
           <MaintenanceForm onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
         ) : view === "summaries" ? (
-          <Summaries user={user} summaries={summaries} documents={documents} showError={showError} />
+          <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
-          <Reports reports={reports} />
+          <ReportsPage reports={reports} />
         ) : (
-          <Dashboard
+          <DashboardPage
             user={user}
             documents={documents}
             filters={filters}
@@ -130,115 +101,6 @@ function App() {
         )}
       </main>
       {message && <div className="toast">{message}</div>}
-    </div>
-  );
-}
-
-function Login({ onLogin, showError }) {
-  const [selectedRole, setSelectedRole] = useState("");
-  const [form, setForm] = useState({ username: "", password: "demo123" });
-
-  function selectRole(username) {
-    setSelectedRole(username);
-    setForm({ username, password: "demo123" });
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    try {
-      onLogin(await api.login(form));
-    } catch (error) {
-      showError(error);
-    }
-  }
-
-  return (
-    <main className="login-shell">
-      <section className="login-panel">
-        <div className="brand-mark">Z</div>
-        <h1>Zanlink Document Flow System</h1>
-        <div className="role-step">
-          <label htmlFor="role">Select your role
-            <select id="role" value={selectedRole} onChange={(event) => selectRole(event.target.value)}>
-              <option value="" disabled>Choose your role</option>
-              {demoUsers.map(([username, label]) => <option value={username} key={username}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-        {selectedRole && (
-          <form className="login-form" onSubmit={submit}>
-            <label>Username<input autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
-            <label>Password<input autoComplete="current-password" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
-            <button className="btn">Sign in</button>
-          </form>
-        )}
-      </section>
-      <section className="hero-art">
-        <div className="employee-welcome">
-          <span>Welcome to Zanlink</span>
-          <h2>Powering Zanzibar&apos;s digital future, together.</h2>
-          <p>Customer service&nbsp;&nbsp;•&nbsp;&nbsp;Teamwork&nbsp;&nbsp;•&nbsp;&nbsp;Innovation&nbsp;&nbsp;•&nbsp;&nbsp;Professionalism</p>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Dashboard({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance }) {
-  const stats = useMemo(() => [
-    ["Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "⌛"],
-    ["Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "↩"],
-    ["Completed", documents.filter((doc) => doc.status === "Completed").length, "✓"],
-    ["Total Visible", documents.length, "▦"],
-  ], [documents, user.department]);
-
-  return (
-    <>
-      <div className="topbar dashboard-topbar">
-        <div className="page-title"><span className="eyebrow">Employee workspace</span><h1>Welcome back, {user.name}</h1><p>Here&apos;s what needs your attention today.</p></div>
-        <div className="toolbar">
-          {canCreate(user) && <button className="btn" onClick={onCreateDoc1}>New Onboarding</button>}
-          {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
-        </div>
-      </div>
-      <section className="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
-      <section className="panel filters">
-        <div className="filter-heading"><div><strong>Documents</strong><span>Find and process work assigned to your role</span></div></div>
-        <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
-        <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">Maintenance</option></select>
-        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
-        <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
-      </section>
-      <DocumentTable user={user} documents={documents} onOpen={onOpen} />
-    </>
-  );
-}
-
-function DocumentTable({ user, documents, onOpen }) {
-  if (!documents.length) return <div className="panel empty">No documents match this view.</div>;
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Current Department</th><th>Action</th></tr></thead>
-        <tbody>
-          {documents.map((doc) => {
-            const engineerTracking = user.role === "Engineer" && !["Draft", "Completed"].includes(doc.status);
-            return (
-              <React.Fragment key={doc.id}>
-                <tr>
-                  <td><strong>{doc.number}</strong></td>
-                  <td>{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
-                  <td>{doc.clientName}<br /><small>{doc.location}</small></td>
-                  <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
-                  <td>{doc.currentDepartment}</td>
-                  <td>{!engineerTracking && <button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button>}</td>
-                </tr>
-                {engineerTracking && <tr><td colSpan="6"><WorkflowTracker type={doc.type} status={doc.status} /></td></tr>}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -489,10 +351,6 @@ function StockRequisitionPreview({ doc }) {
       </div>
     </article>
   );
-}
-
-function Field({ label, value }) {
-  return <div className="paper-field"><span>{label}</span><strong>{value || "-"}</strong></div>;
 }
 
 function Signature({ label, name, position }) {
@@ -755,141 +613,8 @@ function EngineerItemEditor({ items, setItems }) {
   );
 }
 
-function WorkflowTracker({ type, status }) {
-  const stages = type === "maintenance" ? [
-    ["Engineer Section", null],
-    ["HOD Approval", "Pending HOD"],
-    ["Accounts Section", "Pending Accounts"],
-  ] : [
-    ["Engineer Section", null],
-    ["Sales Section", "Pending Sales"],
-    ["Accounts Section", "Pending Accounts"],
-    ["Store Section", "Pending Store"],
-    ["Management Approval", "Pending Management"],
-  ];
-  const currentIndex = Math.max(1, stages.findIndex(([, pendingStatus]) => pendingStatus === status));
-  return (
-    <div className="workflow-tracker"><strong>Workflow Progress</strong>{stages.map(([label], index) => {
-      const state = status === "Completed" || index < currentIndex ? "Completed" : index === currentIndex ? "Pending" : "Not Started";
-      return <div className={`workflow-step ${state.toLowerCase().replace(" ", "-")}`} key={label}><span>{state === "Completed" ? "✓" : state === "Pending" ? "⏳" : "○"}</span><b>{label}</b><small>{state}</small></div>;
-    })}</div>
-  );
-}
-
 function History({ doc }) {
   return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{item.note}</small></div></div>)}</div></section>;
-}
-
-function Summaries({ user, summaries, documents, showError }) {
-  if (!summaries.length) return <div className="panel empty">No client summaries generated yet.</div>;
-  return <><div className="topbar"><div className="page-title"><h1>Client Summaries</h1><p>Completed, read-only delivery records generated from approved Document 1 data.</p></div></div>{summaries.map((summary) => <Summary key={summary.id} user={user} summary={summary} doc={documents.find((item) => item.id === summary.sourceDocumentId)} showError={showError} />)}</>;
-}
-
-function Summary({ user, summary, doc, showError }) {
-  const items = summary.items || [];
-  const customerName = summary.customerName || doc?.clientName || "";
-  const printId = `client-summary-${summary.id}`;
-  const subtotal = items.reduce((total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0), 0);
-  const transportCost = Number(summary.transportCost || 0);
-  const grandTotal = subtotal + transportCost;
-
-  async function download() {
-    try {
-      const blob = await api.downloadSummary(user, summary.id);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${customerName || "client"}_client_summary.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      showError(error);
-    }
-  }
-
-  function printSummary() {
-    const target = document.getElementById(printId);
-    if (!target) return;
-    const cleanup = () => {
-      target.classList.remove("print-target");
-      document.body.classList.remove("printing-summary");
-    };
-    document.body.classList.add("printing-summary");
-    target.classList.add("print-target");
-    window.addEventListener("afterprint", cleanup, { once: true });
-    try {
-      window.print();
-    } catch (error) {
-      cleanup();
-      throw error;
-    }
-  }
-
-  return (
-    <article id={printId} className="summary-document client-delivery">
-      <div className="client-summary-head">
-        <div className="paper-logo">zanlink</div>
-        <div className="company-address">P.O. Box 4204,<br />Zanzibar, TANZANIA.<br />Tel: +255 777 476 666<br />E-Mail: info-zanlink@liquidtelecom.co.tz</div>
-      </div>
-      <div className="summary-meta-grid">
-        <Field label="Sheet No." value={summary.number} />
-        <Field label="Source Document" value={summary.sourceDocumentNumber || doc?.number} />
-        <Field label="Customer" value={customerName} />
-        <Field label="Location" value={summary.customerLocation || doc?.location} />
-        <Field label="Date" value={formatDate(summary.createdAt)} />
-        <Field label="Invoice Number" value={summary.invoiceNumber || doc?.accounts?.invoiceNumber} />
-        <Field label="Accounts Billing Amount" value={usd(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0)} />
-        <Field label="Contact" value={summary.customerContact || doc?.contact} />
-      </div>
-      <h3>Equipment/Accessories delivered</h3>
-      <div className="table-wrap">
-        <table className="delivery-table">
-          <thead><tr><th>No.</th><th>Item ID</th><th>Equipment/Accessory</th><th>Qty</th><th>Purpose</th><th>Cost</th><th>Total</th></tr></thead>
-          <tbody>
-            {items.map((item, index) => (
-              <tr key={index}>
-                <td>{index + 1}</td>
-                <td>{item.itemId || item.serialNumber || "-"}</td>
-                <td>{item.name || "-"}</td>
-                <td>{Number(item.issuedQty || 0)}</td>
-                <td>{item.purpose || "Sold to Client"}</td>
-                <td>{usd(Number(item.unitCost || 0))}</td>
-                <td>{usd(Number(item.issuedQty || 0) * Number(item.unitCost || 0))}</td>
-              </tr>
-            ))}
-            <tr><td colSpan="6"><strong>Sub Total:</strong></td><td>{usd(subtotal)}</td></tr>
-            <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{usd(transportCost)}</td></tr>
-            <tr><td colSpan="6"><strong>Grand Total Cost:</strong></td><td>{usd(grandTotal)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <section className="terms-box">
-        <strong>Terms & Conditions</strong>
-        <p>{summary.terms || "-"}</p>
-      </section>
-      <div className="signature-pair">
-        <Field label="Name of Customer" value={customerName} />
-        <Field label="Name of ZANLINK Staff" value={summary.zanlinkStaff} />
-      </div>
-      <div className="button-row no-print">
-        <button className="btn secondary" onClick={download}>Download Client Summary PDF</button>
-        <button className="btn secondary" onClick={printSummary}>Print This Summary</button>
-      </div>
-    </article>
-  );
-}
-
-function Reports({ reports }) {
-  if (!reports) return <div className="panel empty">Loading reports...</div>;
-  return (
-    <>
-      <div className="topbar"><div className="page-title"><h1>Reports</h1><p>Operational totals for management review.</p></div></div>
-      <section className="stats"><div className="stat"><b>{reports.totalDocuments}</b><span>Total Documents</span></div><div className="stat"><b>{reports.totalSummaries}</b><span>Client Summaries</span></div><div className="stat"><b>{reports.unreadNotifications}</b><span>Unread Notifications</span></div></section>
-      <section className="panel"><h2>Status Breakdown</h2><div className="table-wrap"><table><tbody>{Object.entries(reports.statusCounts).map(([status, count]) => <tr key={status}><td>{status}</td><td>{count}</td></tr>)}</tbody></table></div></section>
-    </>
-  );
 }
 
 function textInput(label, key, form, setForm, disabled = false) {
@@ -900,30 +625,4 @@ function numberInput(label, key, form, setForm, disabled = false) {
   return <label>{label}<input type="number" min="0" disabled={disabled} required value={form[key] || ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>;
 }
 
-function canCreate(user) {
-  return user.role === "Engineer" || user.role === "System Admin";
-}
-
-function canAct(user, department) {
-  return user.role === "System Admin" || user.department === department || user.role === department;
-}
-
-function statusClass(status) {
-  if (status === "Completed") return "done";
-  if (status?.includes("Returned")) return "returned";
-  return "";
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat("en-TZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function money(value) {
-  return new Intl.NumberFormat("en-TZ", { style: "currency", currency: "TZS", maximumFractionDigits: 0 }).format(Number(value || 0));
-}
-
-function usd(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(value || 0));
-}
-
-createRoot(document.getElementById("root")).render(<App />);
+export default App;

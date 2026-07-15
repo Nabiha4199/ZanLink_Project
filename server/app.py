@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from io import BytesIO
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -17,7 +18,7 @@ from reportlab.platypus import TableStyle
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
 
 
 USERS = [
@@ -953,4 +954,8 @@ def reports():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "5000")),
+        debug=os.getenv("FLASK_DEBUG", "true").lower() == "true",
+    )
