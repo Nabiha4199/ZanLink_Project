@@ -28,7 +28,6 @@ export const api = {
   management: (user, id, payload) => request(`/api/documents/${id}/management`, { method: "POST", body: JSON.stringify(payload) }, user),
   hod: (user, id, payload) => request(`/api/documents/${id}/hod`, { method: "POST", body: JSON.stringify(payload) }, user),
   summaries: (user) => request("/api/summaries", {}, user),
-  updateSummary: (user, id, payload) => request(`/api/summaries/${id}`, { method: "PUT", body: JSON.stringify(payload) }, user),
   reports: (user) => request("/api/reports", {}, user),
   downloadSummary: async (user, id) => {
     const response = await fetch(`${API_URL}/api/summaries/${id}/download`, {

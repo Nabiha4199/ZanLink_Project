@@ -13,7 +13,7 @@ const demoUsers = [
   ["admin", "System Admin"],
 ];
 
-const emptyItem = { name: "", requestedQty: 1, issuedQty: 0, serialNumber: "", purpose: "", unitCost: 0 };
+const emptyItem = { itemId: "", name: "", requestedQty: 1, issuedQty: 0, serialNumber: "", purpose: "", unitCost: 0 };
 const engineerStockItems = [
   { id: "NET-001", description: "UTP Network Cable CAT6" },
   { id: "FIB-001", description: "Fibre Optic Drop Cable" },
@@ -103,7 +103,7 @@ function App() {
         ) : view === "maintenance" ? (
           <MaintenanceForm onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
         ) : view === "summaries" ? (
-          <Summaries user={user} summaries={summaries} documents={documents} refresh={refresh} showError={showError} />
+          <Summaries user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
           <Reports reports={reports} />
         ) : (
@@ -354,7 +354,7 @@ function MaintenanceCertificate({ user, doc }) {
           <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
           <tbody>
             {(doc.maintenance?.items || []).map((item, index) => (
-              <tr key={index}><td>{index + 1}</td><td>{item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
+              <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
             ))}
           </tbody>
         </table>
@@ -451,7 +451,7 @@ function StockRequisitionPreview({ doc }) {
         <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
         <tbody>
           {(doc.store?.items || []).map((item, index) => (
-            <tr key={index}><td>{index + 1}</td><td>{item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
+            <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
           ))}
         </tbody>
       </table>
@@ -497,7 +497,10 @@ function Doc1Actions({ user, doc, run }) {
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   const engineerEquipment = doc.store?.items || [];
   const [accountEquipment, setAccountEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
-  const [items, setItems] = useState(doc.store?.items || []);
+  const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
+    ...item,
+    issuedQty: storeOpen && Number(item.issuedQty || 0) === 0 ? Number(item.requestedQty || 0) : Number(item.issuedQty || 0),
+  })));
   const [storeRemarks, setStoreRemarks] = useState(doc.store?.remarks || "");
   const [managementRemarks, setManagementRemarks] = useState(doc.management?.remarks || "");
 
@@ -585,7 +588,7 @@ function EquipmentCostEditor({ items, setItems, locked = false }) {
       {items.map((item, index) => (
         <div className="item-row" key={index}>
           <label>Item<input disabled value={item.name || ""} readOnly /></label>
-          <label>Req. Qty<input disabled type="number" value={item.requestedQty || 1} readOnly /></label>
+          <label>Req. Qty<span className="readonly-value">{item.requestedQty || 1}</span></label>
           <label>Unit Cost<input required min="0" type="number" disabled={locked} value={item.unitCost || ""} onChange={(event) => update(index, event.target.value)} /></label>
         </div>
       ))}
@@ -608,7 +611,7 @@ function ReadOnlyEquipment({ title, items }) {
             <div className="readonly-equipment-meta">
               <span><b>Req. Qty</b>{item.requestedQty || 1}</span>
               <span><b>Purpose</b>{item.purpose || "-"}</span>
-              <span><b>Serial No.</b>{item.serialNumber || "-"}</span>
+              <span><b>Item ID</b>{item.itemId || item.serialNumber || "-"}</span>
             </div>
           </div>
         ))}
@@ -630,15 +633,16 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
         <div className="table-wrap">
           <table className="store-equipment-table">
             <thead>
-              <tr><th>No.</th><th>Requested Equipment</th><th>Requested Quantity</th><th>Issued Quantity</th></tr>
+              <tr><th>No.</th><th>Item ID</th><th>Description</th><th>Requested Quantity</th><th>Issued Quantity</th></tr>
             </thead>
             <tbody>
               {items.map((item, index) => (
                 <tr key={index}>
                   <td>{index + 1}</td>
-                  <td><strong>{item.name}</strong></td>
+                  <td><strong>{item.itemId || item.serialNumber || "-"}</strong></td>
+                  <td>{item.name || "-"}</td>
                   <td>{item.requestedQty}</td>
-                  <td><input aria-label={`Issued quantity for ${item.name}`} required min="0" max={item.requestedQty} type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
+                  <td><input aria-label={`Issued quantity for ${item.name}`} required min="1" max={item.requestedQty} type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
                 </tr>
               ))}
             </tbody>
@@ -653,14 +657,14 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
       <div className="section-title"><h2>{title}</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>{addLabel}</button>}</div>
       <div className="table-wrap">
         <table className="stock-items-table">
-          <thead><tr><th>Item</th><th>Requested Qty</th><th>Issued Qty</th><th>Serial No.</th><th>Purpose</th><th>Unit Cost</th></tr></thead>
+          <thead><tr><th>Description</th><th>Requested Qty</th><th>Issued Qty</th><th>Item ID</th><th>Purpose</th><th>Unit Cost</th></tr></thead>
           <tbody>
             {items.map((item, index) => (
               <tr key={index}>
                 <td><input aria-label={`Item ${index + 1}`} required disabled={locked} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></td>
-                <td><input aria-label={`Requested quantity for item ${index + 1}`} required min="1" type="number" disabled={locked} value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} /></td>
+                <td>{locked ? <span className="readonly-value">{item.requestedQty}</span> : <input aria-label={`Requested quantity for item ${index + 1}`} required min="1" type="number" value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} />}</td>
                 <td><input aria-label={`Issued quantity for item ${index + 1}`} min="0" type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
-                <td><input aria-label={`Serial number for item ${index + 1}`} disabled={locked} value={item.serialNumber} onChange={(e) => update(index, "serialNumber", e.target.value)} /></td>
+                <td>{locked ? <span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span> : <input aria-label={`Item ID for item ${index + 1}`} value={item.itemId || ""} onChange={(e) => update(index, "itemId", e.target.value)} />}</td>
                 <td><input aria-label={`Purpose for item ${index + 1}`} disabled={locked} value={item.purpose} onChange={(e) => update(index, "purpose", e.target.value)} /></td>
                 <td><input aria-label={`Unit cost for item ${index + 1}`} min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></td>
               </tr>
@@ -685,7 +689,7 @@ function EngineerItemEditor({ items, setItems }) {
 
   function updateDescription(index, description) {
     const selected = engineerStockItems.find((item) => item.description === description);
-    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, name: description, serialNumber: selected?.id || "" } : item));
+    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, itemId: selected?.id || "", name: description, serialNumber: "" } : item));
   }
 
   function updateQuantity(index, value) {
@@ -704,7 +708,7 @@ function EngineerItemEditor({ items, setItems }) {
               return (
                 <tr key={itemIndex}>
                   <td>{itemIndex + 1}</td>
-                  <td><input readOnly value={item.serialNumber} /></td>
+                  <td><span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span></td>
                   <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{engineerStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}</select></td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
@@ -751,40 +755,18 @@ function History({ doc }) {
   return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{item.note}</small></div></div>)}</div></section>;
 }
 
-function Summaries({ user, summaries, documents, refresh, showError }) {
+function Summaries({ user, summaries, documents, showError }) {
   if (!summaries.length) return <div className="panel empty">No client summaries generated yet.</div>;
-  return <><div className="topbar"><div className="page-title"><h1>Client Summaries</h1><p>Accounts adds equipment costs and downloads the client delivery document.</p></div></div>{summaries.map((summary) => <Summary key={summary.id} user={user} summary={summary} doc={documents.find((item) => item.id === summary.sourceDocumentId)} refresh={refresh} showError={showError} />)}</>;
+  return <><div className="topbar"><div className="page-title"><h1>Client Summaries</h1><p>Completed, read-only delivery records generated from approved Document 1 data.</p></div></div>{summaries.map((summary) => <Summary key={summary.id} user={user} summary={summary} doc={documents.find((item) => item.id === summary.sourceDocumentId)} showError={showError} />)}</>;
 }
 
-function Summary({ user, summary, doc, refresh, showError }) {
-  const canEdit = canAct(user, "Accounts");
-  const [draft, setDraft] = useState(() => ({
-    invoiceNumber: summary.invoiceNumber || "",
-    customerName: summary.customerName || doc?.clientName || "",
-    customerLocation: summary.customerLocation || doc?.location || "",
-    zanlinkStaff: summary.zanlinkStaff || "",
-    transportCost: summary.transportCost || 0,
-    terms: summary.terms || "",
-    items: summary.items.map((item) => ({ ...item, purpose: item.purpose || "Sold to Client", unitCost: item.unitCost || 0 })),
-  }));
-  const subtotal = draft.items.reduce((total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0), 0);
-  const grandTotal = subtotal + Number(draft.transportCost || 0);
-
-  function updateItem(index, key, value) {
-    setDraft({
-      ...draft,
-      items: draft.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key === "unitCost" || key === "issuedQty" ? Number(value) : value } : item),
-    });
-  }
-
-  async function save() {
-    try {
-      await api.updateSummary(user, summary.id, draft);
-      await refresh();
-    } catch (error) {
-      showError(error);
-    }
-  }
+function Summary({ user, summary, doc, showError }) {
+  const items = summary.items || [];
+  const customerName = summary.customerName || doc?.clientName || "";
+  const printId = `client-summary-${summary.id}`;
+  const subtotal = items.reduce((total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0), 0);
+  const transportCost = Number(summary.transportCost || 0);
+  const grandTotal = subtotal + transportCost;
 
   async function download() {
     try {
@@ -792,7 +774,7 @@ function Summary({ user, summary, doc, refresh, showError }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${draft.customerName || "client"}_client_summary.pdf`;
+      link.download = `${customerName || "client"}_client_summary.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -802,52 +784,73 @@ function Summary({ user, summary, doc, refresh, showError }) {
     }
   }
 
+  function printSummary() {
+    const target = document.getElementById(printId);
+    if (!target) return;
+    const cleanup = () => {
+      target.classList.remove("print-target");
+      document.body.classList.remove("printing-summary");
+    };
+    document.body.classList.add("printing-summary");
+    target.classList.add("print-target");
+    window.addEventListener("afterprint", cleanup, { once: true });
+    try {
+      window.print();
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  }
+
   return (
-    <article className="summary-document client-delivery">
+    <article id={printId} className="summary-document client-delivery">
       <div className="client-summary-head">
         <div className="paper-logo">zanlink</div>
         <div className="company-address">P.O. Box 4204,<br />Zanzibar, TANZANIA.<br />Tel: +255 777 476 666<br />E-Mail: info-zanlink@liquidtelecom.co.tz</div>
       </div>
       <div className="summary-meta-grid">
         <Field label="Sheet No." value={summary.number} />
-        <label>Customer<input required disabled={!canEdit} value={draft.customerName} onChange={(e) => setDraft({ ...draft, customerName: e.target.value })} /></label>
+        <Field label="Source Document" value={summary.sourceDocumentNumber || doc?.number} />
+        <Field label="Customer" value={customerName} />
+        <Field label="Location" value={summary.customerLocation || doc?.location} />
         <Field label="Date" value={formatDate(summary.createdAt)} />
-        <label>Invoice Number<input required disabled={!canEdit} value={draft.invoiceNumber} onChange={(e) => setDraft({ ...draft, invoiceNumber: e.target.value })} /></label>
+        <Field label="Invoice Number" value={summary.invoiceNumber || doc?.accounts?.invoiceNumber} />
+        <Field label="Accounts Billing Amount" value={usd(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0)} />
+        <Field label="Contact" value={summary.customerContact || doc?.contact} />
       </div>
       <h3>Equipment/Accessories delivered</h3>
       <div className="table-wrap">
         <table className="delivery-table">
-          <thead><tr><th>No.</th><th>Equipment/Accessory</th><th>Serial No</th><th>Qty</th><th>Purpose</th><th>Cost</th><th>Total</th></tr></thead>
+          <thead><tr><th>No.</th><th>Item ID</th><th>Equipment/Accessory</th><th>Qty</th><th>Purpose</th><th>Cost</th><th>Total</th></tr></thead>
           <tbody>
-            {draft.items.map((item, index) => (
+            {items.map((item, index) => (
               <tr key={index}>
                 <td>{index + 1}</td>
-                <td>{item.name}</td>
-                <td><input disabled={!canEdit} value={item.serialNumber || ""} onChange={(e) => updateItem(index, "serialNumber", e.target.value)} /></td>
-                <td><input required min="0" type="number" disabled={!canEdit} value={item.issuedQty || 0} onChange={(e) => updateItem(index, "issuedQty", e.target.value)} /></td>
-                <td><input required disabled={!canEdit} value={item.purpose || ""} onChange={(e) => updateItem(index, "purpose", e.target.value)} /></td>
-                <td><input required min="0.01" step="0.01" type="number" disabled={!canEdit} value={item.unitCost || 0} onChange={(e) => updateItem(index, "unitCost", e.target.value)} /></td>
+                <td>{item.itemId || item.serialNumber || "-"}</td>
+                <td>{item.name || "-"}</td>
+                <td>{Number(item.issuedQty || 0)}</td>
+                <td>{item.purpose || "Sold to Client"}</td>
+                <td>{usd(Number(item.unitCost || 0))}</td>
                 <td>{usd(Number(item.issuedQty || 0) * Number(item.unitCost || 0))}</td>
               </tr>
             ))}
             <tr><td colSpan="6"><strong>Sub Total:</strong></td><td>{usd(subtotal)}</td></tr>
-            <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{canEdit ? <input min="0" type="number" value={draft.transportCost} onChange={(e) => setDraft({ ...draft, transportCost: Number(e.target.value) })} /> : usd(draft.transportCost)}</td></tr>
+            <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{usd(transportCost)}</td></tr>
             <tr><td colSpan="6"><strong>Grand Total Cost:</strong></td><td>{usd(grandTotal)}</td></tr>
           </tbody>
         </table>
       </div>
       <section className="terms-box">
         <strong>Terms & Conditions</strong>
-        <textarea required disabled={!canEdit} value={draft.terms} onChange={(e) => setDraft({ ...draft, terms: e.target.value })} />
+        <p>{summary.terms || "-"}</p>
       </section>
       <div className="signature-pair">
-        <label>Name of Customer<input required disabled={!canEdit} value={draft.customerName} onChange={(e) => setDraft({ ...draft, customerName: e.target.value })} /></label>
-        <label>Name of ZANLINK Staff<input required disabled={!canEdit} value={draft.zanlinkStaff} onChange={(e) => setDraft({ ...draft, zanlinkStaff: e.target.value })} /></label>
+        <Field label="Name of Customer" value={customerName} />
+        <Field label="Name of ZANLINK Staff" value={summary.zanlinkStaff} />
       </div>
       <div className="button-row no-print">
-        {canEdit && <button className="btn" onClick={save}>Save Accounts Costs</button>}
         <button className="btn secondary" onClick={download}>Download Client Summary PDF</button>
-        <button className="btn secondary" onClick={() => window.print()}>Print This Page</button>
+        <button className="btn secondary" onClick={printSummary}>Print This Summary</button>
       </div>
     </article>
   );

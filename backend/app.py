@@ -63,8 +63,8 @@ STATE = {
                 "amountMatches": None,
                 "remarks": "",
                 "items": [
-                    {"name": "Router", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "CPE", "unitCost": 180000},
-                    {"name": "Outdoor radio", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "Connectivity", "unitCost": 520000},
+                    {"itemId": "RTR-001", "name": "Router", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "CPE", "unitCost": 180000},
+                    {"itemId": "RAD-001", "name": "Outdoor radio", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "Connectivity", "unitCost": 520000},
                 ],
             },
             "management": {},
@@ -206,6 +206,7 @@ def validate_items(items: list, *, require_issued: bool = False, require_cost: b
         unit_cost = require_number(item, "unitCost", f"{context} {index} cost", minimum=0, allow_zero=not require_cost)
         cleaned.append(
             {
+                "itemId": optional_text(item, "itemId", max_length=120),
                 "name": name,
                 "requestedQty": requested_qty,
                 "issuedQty": issued_qty,
@@ -230,18 +231,23 @@ def generate_summary(doc: dict) -> dict:
 
     items = deepcopy(doc["store"]["items"])
     subtotal = sum(float(item.get("issuedQty") or 0) * float(item.get("unitCost") or 0) for item in items)
+    created_by = find_user(doc.get("createdBy"))
     summary = {
         "id": str(uuid4()),
         "number": next_number("summary"),
         "sourceDocumentId": doc["id"],
+        "sourceDocumentNumber": doc["number"],
         "customerName": doc["clientName"],
         "customerLocation": doc["location"],
+        "customerContact": doc.get("contact", ""),
+        "service": doc.get("service", ""),
         "invoiceNumber": doc.get("accounts", {}).get("invoiceNumber", ""),
+        "billingAmount": float(doc.get("accounts", {}).get("billingAmount") or 0),
         "items": items,
         "subtotal": subtotal,
         "transportCost": 0,
         "grandTotal": subtotal,
-        "zanlinkStaff": "",
+        "zanlinkStaff": created_by["name"] if created_by else "",
         "terms": "If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.",
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
@@ -285,15 +291,6 @@ def require_completed_doc1(user: dict, document_id: str) -> dict:
 def pdf_response(buffer: BytesIO, filename: str):
     buffer.seek(0)
     return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
-
-
-def recalculate_summary(summary: dict) -> None:
-    subtotal = sum(float(item.get("issuedQty") or 0) * float(item.get("unitCost") or 0) for item in summary.get("items", []))
-    transport = float(summary.get("transportCost") or 0)
-    summary["subtotal"] = subtotal
-    summary["transportCost"] = transport
-    summary["grandTotal"] = subtotal + transport
-    summary["updatedAt"] = now_iso()
 
 
 def draw_header(pdf: canvas.Canvas, title: str, doc: dict) -> None:
@@ -406,7 +403,7 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
         rows.append(
             [
                 str(index),
-                item.get("serialNumber") or "-",
+                item.get("itemId") or item.get("serialNumber") or "-",
                 item.get("name") or "-",
                 str(item.get("requestedQty") or "-"),
                 str(item.get("issuedQty") or "-"),
@@ -474,50 +471,51 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
     pdf.drawRightString(width - 22 * mm, height - 32 * mm, "E-Mail: info-zanlink@liquidtelecom.co.tz")
 
     info_rows = [
-        ["Sheet No.", summary["number"]],
-        ["Customer", summary.get("customerName") or (doc or {}).get("clientName", "")],
-        ["Date", datetime.fromisoformat(summary["createdAt"]).strftime("%d/%m/%Y") if summary.get("createdAt") else datetime.now().strftime("%d/%m/%Y")],
-        ["Invoice Number", summary.get("invoiceNumber", "")],
+        ["Sheet No.", summary["number"], "Source Document", summary.get("sourceDocumentNumber") or (doc or {}).get("number", "")],
+        ["Customer", summary.get("customerName") or (doc or {}).get("clientName", ""), "Location", summary.get("customerLocation") or (doc or {}).get("location", "")],
+        ["Date", datetime.fromisoformat(summary["createdAt"]).strftime("%d/%m/%Y") if summary.get("createdAt") else datetime.now().strftime("%d/%m/%Y"), "Invoice Number", summary.get("invoiceNumber", "")],
+        ["Billing Amount", f"${float(summary.get('billingAmount') or 0):,.2f}", "Contact", summary.get("customerContact") or (doc or {}).get("contact", "")],
     ]
-    info_table = Table(info_rows, colWidths=[34 * mm, 144 * mm])
-    info_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.black), ("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold")]))
+    info_table = Table(info_rows, colWidths=[28 * mm, 61 * mm, 28 * mm, 61 * mm])
+    info_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.black), ("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold")]))
     info_table.wrapOn(pdf, width, height)
     info_table.drawOn(pdf, 16 * mm, height - 62 * mm)
 
     pdf.setFont("Helvetica", 8)
     pdf.drawCentredString(width / 2, height - 78 * mm, "Equipment/Accessories delivered")
 
-    rows = [["No.", "Equipment/Accessory", "Serial No", "Qty", "Purpose", "Cost"]]
+    rows = [["No.", "Item ID", "Equipment/Accessory", "Qty", "Purpose", "Unit Cost", "Total"]]
     for index, item in enumerate(summary.get("items", []), start=1):
         qty = float(item.get("issuedQty") or 0)
         cost = float(item.get("unitCost") or 0)
         rows.append(
             [
                 str(index),
+                item.get("itemId") or item.get("serialNumber", ""),
                 item.get("name", ""),
-                item.get("serialNumber", ""),
                 f"{qty:g}",
                 item.get("purpose") or "Sold to Client",
+                f"${cost:,.2f}",
                 f"${qty * cost:,.2f}",
             ]
         )
     rows.extend(
         [
-            ["", "", "", "", "Sub Total:", f"${float(summary.get('subtotal') or 0):,.2f}"],
-            ["", "", "", "", "Transportation Cost:", f"${float(summary.get('transportCost') or 0):,.2f}"],
-            ["", "", "", "", "Grand Total Cost:", f"${float(summary.get('grandTotal') or 0):,.2f}"],
+            ["", "", "", "", "", "Sub Total:", f"${float(summary.get('subtotal') or 0):,.2f}"],
+            ["", "", "", "", "", "Transportation Cost:", f"${float(summary.get('transportCost') or 0):,.2f}"],
+            ["", "", "", "", "", "Grand Total Cost:", f"${float(summary.get('grandTotal') or 0):,.2f}"],
         ]
     )
-    table = Table(rows, colWidths=[10 * mm, 52 * mm, 42 * mm, 16 * mm, 39 * mm, 24 * mm])
+    table = Table(rows, colWidths=[9 * mm, 25 * mm, 52 * mm, 13 * mm, 31 * mm, 25 * mm, 28 * mm])
     table.setStyle(
         TableStyle(
             [
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (4, -3), (-1, -1), "Helvetica-Bold"),
+                ("FONTNAME", (5, -3), (-1, -1), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, -1), 7),
-                ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+                ("ALIGN", (5, 1), (6, -1), "RIGHT"),
             ]
         )
     )
@@ -586,7 +584,7 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
         rows.append(
             [
                 str(index),
-                item.get("serialNumber") or "-",
+                item.get("itemId") or item.get("serialNumber") or "-",
                 item.get("name") or "-",
                 str(item.get("requestedQty") or "-"),
                 str(item.get("issuedQty") or "-"),
@@ -795,8 +793,16 @@ def accounts_submit(document_id: str):
     else:
         source_equipment = payload.get("equipment") or doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
         equipment = validate_items(source_equipment, require_cost=True, context="Account equipment")
-        doc.setdefault("sales", {})["equipment"] = equipment
-        doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
+        store_items = deepcopy(doc.get("store", {}).get("items", []))
+        if len(equipment) != len(store_items):
+            raise ValueError("Accounts must provide a cost for every requested equipment item")
+        for index, (account_item, store_item) in enumerate(zip(equipment, store_items), start=1):
+            if account_item["name"] != store_item.get("name") or float(account_item["requestedQty"]) != float(store_item.get("requestedQty") or 0):
+                raise ValueError(f"Account equipment {index} must match the original request")
+            store_item["unitCost"] = account_item["unitCost"]
+        doc["store"]["items"] = store_items
+        doc.setdefault("sales", {})["equipment"] = deepcopy(store_items)
+        doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in store_items)
         set_route(doc, "Pending Store", "Store")
         doc["history"].append(history(user["id"], "Billing added", "Submitted to Store."))
         notify("Store", f"{doc['number']} is waiting for stock validation.")
@@ -817,7 +823,13 @@ def store_submit(document_id: str):
     if not isinstance(submitted_items, list) or len(submitted_items) != len(items):
         raise ValueError("Issued quantities must be provided for every requested equipment item")
     for index, item in enumerate(items, start=1):
-        issued_qty = require_number(submitted_items[index - 1], "issuedQty", f"Equipment {index} issued quantity", minimum=0)
+        issued_qty = require_number(
+            submitted_items[index - 1],
+            "issuedQty",
+            f"Equipment {index} issued quantity",
+            minimum=0,
+            allow_zero=False,
+        )
         if issued_qty > float(item.get("requestedQty") or 0):
             raise ValueError(f"Equipment {index} issued quantity cannot exceed requested quantity")
         item["issuedQty"] = issued_qty
@@ -880,25 +892,6 @@ def hod_submit(document_id: str):
 def summaries():
     current_user()
     return jsonify(STATE["summaries"])
-
-
-@app.put("/api/summaries/<summary_id>")
-def update_summary(summary_id: str):
-    user = current_user()
-    require_department(user, "Accounts")
-    summary = find_summary(summary_id)
-    if not summary:
-        raise ValueError("Client summary not found")
-    payload = request.get_json(force=True)
-    summary["invoiceNumber"] = require_text(payload, "invoiceNumber", "Invoice number")
-    summary["customerName"] = require_text(payload, "customerName", "Customer name")
-    summary["customerLocation"] = optional_text(payload, "customerLocation", summary.get("customerLocation", ""), max_length=180)
-    summary["zanlinkStaff"] = require_text(payload, "zanlinkStaff", "Zanlink staff name")
-    summary["transportCost"] = require_number(payload, "transportCost", "Transportation cost", minimum=0) if payload.get("transportCost") not in (None, "") else 0
-    summary["terms"] = require_text(payload, "terms", "Terms and conditions", max_length=1200)
-    summary["items"] = validate_items(payload.get("items", []), require_issued=True, require_cost=True, context="Delivered equipment")
-    recalculate_summary(summary)
-    return jsonify(summary)
 
 
 @app.get("/api/summaries/<summary_id>/download")
