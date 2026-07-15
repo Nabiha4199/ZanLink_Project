@@ -673,6 +673,16 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
 }
 
 function EngineerItemEditor({ items, setItems }) {
+  const pageSize = 5;
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const startIndex = page * pageSize;
+  const visibleItems = items.slice(startIndex, startIndex + pageSize);
+
+  useEffect(() => {
+    if (page >= totalPages) setPage(totalPages - 1);
+  }, [page, totalPages]);
+
   function updateDescription(index, description) {
     const selected = engineerStockItems.find((item) => item.description === description);
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, name: description, serialNumber: selected?.id || "" } : item));
@@ -689,18 +699,28 @@ function EngineerItemEditor({ items, setItems }) {
         <table>
           <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Action</th></tr></thead>
           <tbody>
-            {items.map((item, index) => (
-              <tr key={index}>
-                <td>{index + 1}</td>
-                <td><input readOnly value={item.serialNumber} /></td>
-                <td><select required value={item.name} onChange={(event) => updateDescription(index, event.target.value)}><option value="">Select equipment/material</option>{engineerStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}</select></td>
-                <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(index, event.target.value)} /></td>
-                <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button></td>
-              </tr>
-            ))}
+            {visibleItems.map((item, visibleIndex) => {
+              const itemIndex = startIndex + visibleIndex;
+              return (
+                <tr key={itemIndex}>
+                  <td>{itemIndex + 1}</td>
+                  <td><input readOnly value={item.serialNumber} /></td>
+                  <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{engineerStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}</select></td>
+                  <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
+                  <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-        <div className="engineer-add-item"><button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>+ Add Item</button></div>
+        <div className="engineer-table-footer">
+          <button type="button" className="btn secondary engineer-add-button" onClick={() => { setItems([...items, { ...emptyItem }]); setPage(Math.floor(items.length / pageSize)); }}>+ Add Item</button>
+          <div className="engineer-pagination">
+            <button type="button" className="pagination-arrow" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
+            <span>Page {page + 1} of {totalPages}</span>
+            <button type="button" className="pagination-arrow" aria-label="Next page" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>›</button>
+          </div>
+        </div>
       </div>
     </div>
   );

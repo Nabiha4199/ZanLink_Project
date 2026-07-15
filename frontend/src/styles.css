@@ -17,10 +17,53 @@
   width: 64px;
 }
 
-.engineer-add-item {
+.engineer-add-item,
+.engineer-table-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 12px;
   padding: 12px;
+}
+
+.engineer-table-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  justify-content: stretch;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.engineer-add-button {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.engineer-pagination {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pagination-arrow {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--brand-strong);
+  border-radius: 6px;
+  background: var(--brand);
+  color: white;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pagination-arrow:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .workflow-tracker {
