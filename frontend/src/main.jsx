@@ -79,21 +79,29 @@ function App() {
     }
   }
 
-  if (!user) return <Login onLogin={setUser} showError={showError} />;
+  if (!user) return (
+    <>
+      <Login onLogin={setUser} showError={showError} />
+      {message && <div className="toast">{message}</div>}
+    </>
+  );
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">Z</div><strong>Zanlink Flow</strong></div>
-        <div className="user-box"><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>
+        <div className="user-box">
+          <div className="user-avatar">{user.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</div>
+          <div><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>
+        </div>
         <nav className="nav">
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}>Dashboard</button>
-          {canCreate(user) && <button className={view === "doc1" ? "active" : ""} onClick={() => navigate("doc1")}>New Onboarding</button>}
-          {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => navigate("maintenance")}>New Maintenance</button>}
-          <button className={view === "summaries" ? "active" : ""} onClick={() => navigate("summaries")}>Client Summaries</button>
-          <button className={view === "reports" ? "active" : ""} onClick={() => navigate("reports")}>Reports</button>
+          <button className={view === "dashboard" ? "active" : ""} onClick={() => navigate("dashboard")}><span className="nav-icon">⌂</span>Dashboard</button>
+          {canCreate(user) && <button className={view === "doc1" ? "active" : ""} onClick={() => navigate("doc1")}><span className="nav-icon">＋</span>New Onboarding</button>}
+          {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => navigate("maintenance")}><span className="nav-icon">◇</span>New Maintenance</button>}
+          <button className={view === "summaries" ? "active" : ""} onClick={() => navigate("summaries")}><span className="nav-icon">▤</span>Client Summaries</button>
+          <button className={view === "reports" ? "active" : ""} onClick={() => navigate("reports")}><span className="nav-icon">▦</span>Reports</button>
         </nav>
-        <button className="logout" onClick={() => { localStorage.removeItem("zanlink-user"); setUser(null); }}>Sign out</button>
+        <button className="logout" onClick={() => { localStorage.removeItem("zanlink-user"); setUser(null); }}><span className="nav-icon">↪</span>Sign out</button>
       </aside>
       <main className="main">
         {selected ? (
@@ -127,7 +135,13 @@ function App() {
 }
 
 function Login({ onLogin, showError }) {
-  const [form, setForm] = useState({ username: "engineer", password: "demo123" });
+  const [selectedRole, setSelectedRole] = useState("");
+  const [form, setForm] = useState({ username: "", password: "demo123" });
+
+  function selectRole(username) {
+    setSelectedRole(username);
+    setForm({ username, password: "demo123" });
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -143,42 +157,53 @@ function Login({ onLogin, showError }) {
       <section className="login-panel">
         <div className="brand-mark">Z</div>
         <h1>Zanlink Document Flow System</h1>
-        <p>Controlled movement for onboarding, stock requisition, client summaries, and maintenance requests.</p>
-        <form className="login-form" onSubmit={submit}>
-          <label>Username<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
-          <label>Password<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
-          <button className="btn">Sign in</button>
-        </form>
-        <div className="demo-grid">
-          {demoUsers.map(([username, label]) => (
-            <button className="demo-pill" key={username} onClick={() => setForm({ username, password: "demo123" })}>{label}: {username}</button>
-          ))}
+        <div className="role-step">
+          <label htmlFor="role">Select your role
+            <select id="role" value={selectedRole} onChange={(event) => selectRole(event.target.value)}>
+              <option value="" disabled>Choose your role</option>
+              {demoUsers.map(([username, label]) => <option value={username} key={username}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        {selectedRole && (
+          <form className="login-form" onSubmit={submit}>
+            <label>Username<input autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+            <label>Password<input autoComplete="current-password" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+            <button className="btn">Sign in</button>
+          </form>
+        )}
+      </section>
+      <section className="hero-art">
+        <div className="employee-welcome">
+          <span>Welcome to Zanlink</span>
+          <h2>Powering Zanzibar&apos;s digital future, together.</h2>
+          <p>Customer service&nbsp;&nbsp;•&nbsp;&nbsp;Teamwork&nbsp;&nbsp;•&nbsp;&nbsp;Innovation&nbsp;&nbsp;•&nbsp;&nbsp;Professionalism</p>
         </div>
       </section>
-      <section className="hero-art"><div><h2>Documents move to the right department, with every action recorded.</h2><p>Engineer to Sales to Accounts to Store to Management, with corrections, summaries, and maintenance approvals routed automatically.</p></div></section>
     </main>
   );
 }
 
 function Dashboard({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance }) {
   const stats = useMemo(() => [
-    ["Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length],
-    ["Returned", documents.filter((doc) => doc.status.includes("Returned")).length],
-    ["Completed", documents.filter((doc) => doc.status === "Completed").length],
-    ["Total Visible", documents.length],
+    ["Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "⌛"],
+    ["Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "↩"],
+    ["Completed", documents.filter((doc) => doc.status === "Completed").length, "✓"],
+    ["Total Visible", documents.length, "▦"],
   ], [documents, user.department]);
 
   return (
     <>
-      <div className="topbar">
-        <div className="page-title"><h1>Dashboard</h1><p>Search, filter, and process documents assigned to your role.</p></div>
+      <div className="topbar dashboard-topbar">
+        <div className="page-title"><span className="eyebrow">Employee workspace</span><h1>Welcome back, {user.name}</h1><p>Here&apos;s what needs your attention today.</p></div>
         <div className="toolbar">
           {canCreate(user) && <button className="btn" onClick={onCreateDoc1}>New Onboarding</button>}
           {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
         </div>
       </div>
-      <section className="stats">{stats.map(([label, value]) => <div className="stat" key={label}><b>{value}</b><span>{label}</span></div>)}</section>
+      <section className="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
       <section className="panel filters">
+        <div className="filter-heading"><div><strong>Documents</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
         <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">Maintenance</option></select>
         <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>

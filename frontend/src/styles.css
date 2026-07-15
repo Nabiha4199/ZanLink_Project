@@ -167,7 +167,7 @@
 .paper-head span:last-child,
 .paper-head p {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: #66717f;
 }
 
@@ -177,7 +177,7 @@
   text-align: center;
   border: 1px solid #9aa4b2;
   background: #f8fafc;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .segmented-control {
@@ -244,7 +244,7 @@
   border: 1px solid #9aa4b2;
   border-top: 0;
   padding: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .paper-check {
@@ -284,13 +284,13 @@
 .paper-field span {
   display: block;
   color: #66717f;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .paper-field strong {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -298,7 +298,7 @@
 .paper-table {
   min-width: 0;
   border: 1px solid #7b8490;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .paper-table th,
@@ -348,7 +348,7 @@
 
 .company-address {
   text-align: right;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -373,7 +373,7 @@
   grid-template-columns: 130px 1fr;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: #66717f;
 }
 
@@ -387,7 +387,7 @@
 
 .client-delivery h3 {
   text-align: center;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   margin: 18px 0 6px;
 }
@@ -416,7 +416,7 @@
 .terms-box textarea,
 .terms-box p {
   min-height: 110px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -458,7 +458,7 @@
   display: flex;
   justify-content: space-between;
   gap: 18px;
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 28px;
 }
 
