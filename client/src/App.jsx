@@ -65,10 +65,7 @@ function App() {
   }
 
   if (!user) return (
-    <>
-      <LoginPage onLogin={setUser} showError={showError} />
-      {message && <div className="toast">{message}</div>}
-    </>
+    <LoginPage onLogin={setUser} showError={showError} />
   );
 
   return (

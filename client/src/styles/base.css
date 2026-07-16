@@ -99,6 +99,12 @@ button {
   font-weight: 800;
 }
 
+.auth-notice.auth-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .auth-bottom-links {
   display: flex;
   justify-content: space-between;

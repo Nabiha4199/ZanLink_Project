@@ -4,7 +4,9 @@ Flask API for the Zanlink document workflow. Workflow state is currently held in
 
 ## Environment
 
-Copy `.env.example` values into your shell or hosting environment. Supported settings are `HOST`, `PORT`, `FLASK_DEBUG`, comma-separated `CORS_ORIGINS`, and `GOOGLE_CLIENT_ID`.
+Copy `.env.example` to `.env`. The server loads it automatically. Supported settings are `HOST`, `PORT`, `FLASK_DEBUG`, comma-separated `CORS_ORIGINS`, and `GOOGLE_CLIENT_ID`.
+
+Google sign-in uses one Web application OAuth client ID on both the client and server. Put the same value in `server/.env` as `GOOGLE_CLIENT_ID` and in `client/.env` as `VITE_GOOGLE_CLIENT_ID`. For local development, add `http://localhost:5173` to that OAuth client's Authorized JavaScript origins in Google Cloud Console.
 
 ## Development
 
@@ -13,6 +15,16 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python app.py
+```
+
+On Windows PowerShell, from the `server` directory:
+
+```powershell
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 python app.py
 ```
 

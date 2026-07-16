@@ -18,6 +18,7 @@ export const api = {
   googleLogin: (credential) => request("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   register: (payload) => request("/api/register", { method: "POST", body: JSON.stringify(payload) }),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
+  resetPassword: (payload) => request("/api/reset-password", { method: "POST", body: JSON.stringify(payload) }),
   users: () => request("/api/users"),
   documents: (user, filters = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));

@@ -7,7 +7,7 @@ function loadGoogleIdentity() {
   if (window.google?.accounts?.id) return Promise.resolve(window.google);
 
   return new Promise((resolve, reject) => {
-    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client?hl=en"]');
     const script = existingScript || document.createElement("script");
     const handleLoad = () => resolve(window.google);
     const handleError = () => reject(new Error("Google sign-in could not be loaded"));
@@ -15,7 +15,7 @@ function loadGoogleIdentity() {
     script.addEventListener("load", handleLoad, { once: true });
     script.addEventListener("error", handleError, { once: true });
     if (!existingScript) {
-      script.src = "https://accounts.google.com/gsi/client";
+      script.src = "https://accounts.google.com/gsi/client?hl=en";
       script.async = true;
       document.head.appendChild(script);
     }
@@ -69,13 +69,13 @@ function GoogleSignIn({ onLogin, showError }) {
 }
 
 const demoUsers = [
-  ["engineer", "Engineer"],
-  ["sales", "Sales"],
-  ["accounts", "Accounts"],
-  ["store", "Store"],
-  ["management", "Management"],
-  ["hod", "Head of Department"],
-  ["admin", "System Admin"],
+  ["Engineer", "Engineer"],
+  ["Sales", "Sales"],
+  ["Accounts", "Accounts"],
+  ["Store", "Store"],
+  ["Management", "Management"],
+  ["HOD", "Head of Department"],
+  ["System Admin", "System Admin"],
 ];
 
 const registerRoles = [
@@ -88,59 +88,84 @@ const registerRoles = [
 ];
 
 export default function LoginPage({ onLogin, showError }) {
-  const [mode, setMode] = useState("login");
+  const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
+  const [mode, setMode] = useState(resetToken ? "reset-password" : "login");
   const [selectedRole, setSelectedRole] = useState("");
-  const [loginForm, setLoginForm] = useState({ username: "", password: "demo1234" });
-  const [registerForm, setRegisterForm] = useState({ name: "", username: "", role: "Engineer", password: "", confirmPassword: "" });
-  const [resetForm, setResetForm] = useState({ username: "", newPassword: "", confirmPassword: "" });
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [registerForm, setRegisterForm] = useState({ name: "", email: "", role: "Engineer", password: "", confirmPassword: "" });
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotRole, setForgotRole] = useState("");
+  const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
   const [notice, setNotice] = useState("");
+  const [authError, setAuthError] = useState("");
 
-  function selectRole(username) {
-    setSelectedRole(username);
-    setLoginForm({ username, password: "demo1234" });
+  function reportAuthError(error) {
+    setNotice("");
+    setAuthError(error?.message || String(error));
+  }
+
+  function selectRole(role) {
+    setSelectedRole(role);
   }
 
   function switchMode(nextMode) {
     setMode(nextMode);
     setNotice("");
+    setAuthError("");
   }
 
   async function submitLogin(event) {
     event.preventDefault();
+    setAuthError("");
     try {
-      onLogin(await api.login(loginForm));
+      onLogin(await api.login({ ...loginForm, role: selectedRole }));
     } catch (error) {
-      showError(error);
+      reportAuthError(error);
     }
   }
 
   async function submitRegister(event) {
     event.preventDefault();
     if (registerForm.password !== registerForm.confirmPassword) {
-      showError(new Error("Passwords do not match"));
+      reportAuthError(new Error("Passwords do not match"));
       return;
     }
     try {
       onLogin(await api.register(registerForm));
     } catch (error) {
-      showError(error);
+      reportAuthError(error);
     }
   }
 
-  async function submitReset(event) {
+  async function submitForgotPassword(event) {
+    event.preventDefault();
+    try {
+      const response = await api.forgotPassword({ email: forgotEmail, role: forgotRole });
+      setNotice(response.message);
+      setAuthError("");
+      setForgotEmail("");
+      setForgotRole("");
+      setMode("login");
+    } catch (error) {
+      reportAuthError(error);
+    }
+  }
+
+  async function submitResetPassword(event) {
     event.preventDefault();
     if (resetForm.newPassword !== resetForm.confirmPassword) {
-      showError(new Error("Passwords do not match"));
+      reportAuthError(new Error("Passwords do not match"));
       return;
     }
     try {
-      const response = await api.forgotPassword(resetForm);
-      setNotice(response.message || "Password updated. You can sign in now.");
-      setLoginForm({ username: resetForm.username, password: "" });
-      setResetForm({ username: "", newPassword: "", confirmPassword: "" });
+      const response = await api.resetPassword({ token: resetToken, ...resetForm });
+      setNotice(response.message);
+      setAuthError("");
+      setResetForm({ newPassword: "", confirmPassword: "" });
+      window.history.replaceState({}, "", window.location.pathname);
       setMode("login");
     } catch (error) {
-      showError(error);
+      reportAuthError(error);
     }
   }
 
@@ -152,27 +177,28 @@ export default function LoginPage({ onLogin, showError }) {
         <p>Sign in with your Zanlink account.</p>
 
         {notice && <div className="auth-notice">{notice}</div>}
+        {authError && <div className="auth-notice auth-error" role="alert">{authError}</div>}
 
         {mode === "login" && (
           <>
             <div className="role-step">
-              <label htmlFor="role">Select demo role
+              <label htmlFor="role">Select role
                 <select id="role" value={selectedRole} onChange={(event) => selectRole(event.target.value)}>
                   <option value="" disabled>Choose your role</option>
-                  {demoUsers.map(([username, label]) => <option value={username} key={username}>{label}</option>)}
+                  {demoUsers.map(([role, label]) => <option value={role} key={role}>{label}</option>)}
                 </select>
               </label>
             </div>
             <form className="login-form" onSubmit={submitLogin}>
-              <label>Username<input autoComplete="username" required value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} /></label>
+              <label>Email<input autoComplete="email" required type="email" value={loginForm.email} onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })} /></label>
               <label>Password<input autoComplete="current-password" required minLength="8" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} /></label>
               <button className="btn">Sign in</button>
             </form>
             <div className="auth-divider"><span>or</span></div>
-            <GoogleSignIn onLogin={onLogin} showError={showError} />
+            <GoogleSignIn onLogin={onLogin} showError={reportAuthError} />
             <div className="auth-bottom-links">
               <button type="button" onClick={() => switchMode("register")}>Don't have an account?</button>
-              <button type="button" onClick={() => switchMode("reset")}>Forget password?</button>
+              <button type="button" onClick={() => switchMode("forgot")}>Forgot password?</button>
             </div>
           </>
         )}
@@ -180,7 +206,7 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "register" && (
           <form className="login-form" onSubmit={submitRegister}>
             <label>Full name<input autoComplete="name" required value={registerForm.name} onChange={(event) => setRegisterForm({ ...registerForm, name: event.target.value })} /></label>
-            <label>Username<input autoComplete="username" required value={registerForm.username} onChange={(event) => setRegisterForm({ ...registerForm, username: event.target.value })} /></label>
+            <label>Email<input autoComplete="email" required type="email" value={registerForm.email} onChange={(event) => setRegisterForm({ ...registerForm, email: event.target.value })} /></label>
             <label>Role
               <select required value={registerForm.role} onChange={(event) => setRegisterForm({ ...registerForm, role: event.target.value })}>
                 {registerRoles.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
@@ -193,9 +219,25 @@ export default function LoginPage({ onLogin, showError }) {
           </form>
         )}
 
-        {mode === "reset" && (
-          <form className="login-form" onSubmit={submitReset}>
-            <label>Username<input autoComplete="username" required value={resetForm.username} onChange={(event) => setResetForm({ ...resetForm, username: event.target.value })} /></label>
+        {mode === "forgot" && (
+          <form className="login-form" onSubmit={submitForgotPassword}>
+            <h2>Reset your password</h2>
+            <p>Select your role and enter the email address connected to that account. We will send you a secure reset link.</p>
+            <label>Role
+              <select required value={forgotRole} onChange={(event) => setForgotRole(event.target.value)}>
+                <option value="" disabled>Choose your role</option>
+                {demoUsers.map(([role, label]) => <option value={role} key={role}>{label}</option>)}
+              </select>
+            </label>
+            <label>Email<input autoComplete="email" required type="email" value={forgotEmail} onChange={(event) => setForgotEmail(event.target.value)} /></label>
+            <button className="btn">Send reset link</button>
+            <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
+          </form>
+        )}
+
+        {mode === "reset-password" && (
+          <form className="login-form" onSubmit={submitResetPassword}>
+            <h2>Choose a new password</h2>
             <label>New password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} /><small>Use at least 8 characters.</small></label>
             <label>Confirm new password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} /></label>
             <button className="btn">Reset password</button>

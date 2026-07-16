@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import secrets
+import smtplib
 from io import BytesIO
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
 from flask import send_file
 from flask_cors import CORS
+from dotenv import load_dotenv
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from reportlab.lib import colors
@@ -19,19 +24,27 @@ from reportlab.platypus import Table
 from reportlab.platypus import TableStyle
 
 
+load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+PASSWORD_RESET_TOKENS = {}
 
 
 USERS = [
-    {"id": "u1", "name": "Eng. Amina", "username": "engineer", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
-    {"id": "u2", "name": "Sales Team", "username": "sales", "password": "demo1234", "role": "Sales", "department": "Sales"},
-    {"id": "u3", "name": "Accounts Team", "username": "accounts", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
-    {"id": "u4", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
-    {"id": "u5", "name": "Managing Director", "username": "management", "password": "demo1234", "role": "Management", "department": "Management"},
+    {"id": "u1", "name": "Amina", "username": "engineer", "email": "zda23b007@iitmz.ac.in", "password": "Amina123", "role": "Engineer", "department": "Engineer"},
+    {"id": "u2", "name": "Ayman", "username": "sales", "email": "zda23b009@iitmz.ac.in", "password": "Ayman123", "role": "Sales", "department": "Sales"},
+    {"id": "u3", "name": "Nabiha", "username": "accounts", "email": "zda23b018@iitmz.ac.in", "password": "Nabiha123", "role": "Accounts", "department": "Accounts"},
+    {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
+    {"id": "u5", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
-    {"id": "u7", "name": "System Admin", "username": "admin", "password": "demo1234", "role": "System Admin", "department": "Admin"},
 ]
 
 REGISTERABLE_ROLES = {
@@ -157,8 +170,35 @@ def available_username(email: str) -> str:
     return username
 
 
+def send_password_reset_email(recipient: str, reset_url: str) -> None:
+    if not SMTP_HOST or not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM:
+        raise RuntimeError("Password reset email is not configured")
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your Zanlink password"
+    message["From"] = SMTP_FROM
+    message["To"] = recipient
+    message.set_content(
+        "We received a request to reset your Zanlink password.\n\n"
+        f"Open this link within 30 minutes:\n{reset_url}\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
+        if SMTP_USE_TLS:
+            smtp.starttls()
+        smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+        smtp.send_message(message)
+
+
 def find_user(user_id: str | None) -> dict | None:
     return next((user for user in USERS if user["id"] == user_id), None)
+
+
+def user_has_role(user: dict, selected_role: str) -> bool:
+    allowed_roles = {user["role"], user.get("department", "")}
+    if user["role"] == "System Admin":
+        allowed_roles.update({"Management", "System Admin"})
+    return selected_role in allowed_roles
 
 
 def find_document(document_id: str) -> dict | None:
@@ -688,10 +728,15 @@ def users():
 @app.post("/api/login")
 def login():
     payload = request.get_json(force=True)
-    username = normalize_username(payload.get("username"))
-    user = next((item for item in USERS if item["username"] == username and item.get("password") == payload.get("password")), None)
+    email = normalize_username(payload.get("email"))
+    selected_role = str(payload.get("role") or "").strip()
+    if not selected_role:
+        raise ValueError("Please select your role")
+    user = next((item for item in USERS if item.get("email") == email and item.get("password") == payload.get("password")), None)
     if not user:
-        return jsonify({"error": "Invalid username or password"}), 401
+        return jsonify({"error": "Invalid email or password"}), 401
+    if not user_has_role(user, selected_role):
+        return jsonify({"error": "The selected role does not match this account"}), 403
     return jsonify(public_user(user))
 
 
@@ -739,15 +784,11 @@ def google_login():
 @app.post("/api/register")
 def register():
     payload = request.get_json(force=True)
-    username = normalize_username(payload.get("username"))
-    if len(username) < 3:
-        raise ValueError("Username must be at least 3 characters")
-    if len(username) > 40:
-        raise ValueError("Username must be 40 characters or fewer")
-    if not username.replace("_", "").replace(".", "").replace("-", "").isalnum():
-        raise ValueError("Username can contain letters, numbers, dots, hyphens, and underscores")
-    if any(user["username"] == username for user in USERS):
-        raise ValueError("Username is already registered")
+    email = normalize_username(payload.get("email"))
+    if "@" not in email or email.startswith("@") or email.endswith("@"):
+        raise ValueError("Enter a valid email address")
+    if any(user.get("email") == email for user in USERS):
+        raise ValueError("Email is already registered")
 
     role_key = require_text(payload, "role", "Role", max_length=40)
     role_info = REGISTERABLE_ROLES.get(role_key)
@@ -757,7 +798,8 @@ def register():
     user = {
         "id": f"u-{uuid4()}",
         "name": require_text(payload, "name", "Full name"),
-        "username": username,
+        "username": available_username(email),
+        "email": email,
         "password": require_password(payload),
         **role_info,
     }
@@ -768,15 +810,51 @@ def register():
 @app.post("/api/forgot-password")
 def forgot_password():
     payload = request.get_json(force=True)
-    username = normalize_username(payload.get("username"))
-    user = next((item for item in USERS if item["username"] == username), None)
+    email = normalize_username(payload.get("email"))
+    selected_role = str(payload.get("role") or "").strip()
+    if "@" not in email:
+        raise ValueError("Enter a valid email address")
+    if not selected_role:
+        raise ValueError("Please select your role")
+
+    user = next((item for item in USERS if item.get("email") == email), None)
     if not user:
-        raise ValueError("No account was found for that username")
+        return jsonify({"error": "No account is registered with that email address. Check the email or contact zda23b014@iitmz.ac.in to be added."}), 404
+    if not user_has_role(user, selected_role):
+        return jsonify({"error": "That email is not registered for the selected role. Check your email and role."}), 403
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    PASSWORD_RESET_TOKENS[token_hash] = {
+        "userId": user["id"],
+        "expiresAt": datetime.now(timezone.utc) + timedelta(minutes=30),
+    }
+    try:
+        send_password_reset_email(email, f"{APP_URL}/?reset_token={raw_token}")
+    except Exception:
+        PASSWORD_RESET_TOKENS.pop(token_hash, None)
+        app.logger.exception("Could not send password reset email")
+        return jsonify({"error": "Your account was found, but the system could not send the reset email because email delivery is not configured. Contact zda23b014@iitmz.ac.in."}), 503
+
+    return jsonify({"ok": True, "message": "A password reset link has been sent to your email."})
+
+
+@app.post("/api/reset-password")
+def reset_password():
+    payload = request.get_json(force=True)
+    raw_token = str(payload.get("token") or "")
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    reset = PASSWORD_RESET_TOKENS.get(token_hash)
+    if not reset or reset["expiresAt"] < datetime.now(timezone.utc):
+        PASSWORD_RESET_TOKENS.pop(token_hash, None)
+        return jsonify({"error": "This reset link is invalid or has expired"}), 400
 
     password = require_password(payload, "newPassword")
     if password != str(payload.get("confirmPassword") or ""):
         raise ValueError("Passwords do not match")
+    user = find_user(reset["userId"])
     user["password"] = password
+    PASSWORD_RESET_TOKENS.pop(token_hash, None)
     return jsonify({"ok": True, "message": "Password updated. You can sign in now."})
 
 
