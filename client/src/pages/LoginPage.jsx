@@ -1,5 +1,72 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
+
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+
+function loadGoogleIdentity() {
+  if (window.google?.accounts?.id) return Promise.resolve(window.google);
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    const script = existingScript || document.createElement("script");
+    const handleLoad = () => resolve(window.google);
+    const handleError = () => reject(new Error("Google sign-in could not be loaded"));
+
+    script.addEventListener("load", handleLoad, { once: true });
+    script.addEventListener("error", handleError, { once: true });
+    if (!existingScript) {
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  });
+}
+
+function GoogleSignIn({ onLogin, showError }) {
+  const buttonRef = useRef(null);
+  const onLoginRef = useRef(onLogin);
+  const showErrorRef = useRef(showError);
+  onLoginRef.current = onLogin;
+  showErrorRef.current = showError;
+
+  useEffect(() => {
+    if (!googleClientId) return undefined;
+    let active = true;
+
+    loadGoogleIdentity()
+      .then((google) => {
+        if (!active || !buttonRef.current) return;
+        google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response) => {
+            try {
+              onLoginRef.current(await api.googleLogin(response.credential));
+            } catch (error) {
+              showErrorRef.current(error);
+            }
+          },
+        });
+        google.accounts.id.renderButton(buttonRef.current, {
+          theme: "outline",
+          size: "large",
+          shape: "rectangular",
+          text: "signin_with",
+          width: Math.min(buttonRef.current.offsetWidth || 320, 400),
+        });
+      })
+      .catch((error) => showErrorRef.current(error));
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!googleClientId) {
+    return <button className="google-disabled" type="button" disabled title="Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in">Sign in with Google</button>;
+  }
+
+  return <div className="google-button" ref={buttonRef} />;
+}
 
 const demoUsers = [
   ["engineer", "Engineer"],
@@ -23,14 +90,14 @@ const registerRoles = [
 export default function LoginPage({ onLogin, showError }) {
   const [mode, setMode] = useState("login");
   const [selectedRole, setSelectedRole] = useState("");
-  const [loginForm, setLoginForm] = useState({ username: "", password: "demo123" });
+  const [loginForm, setLoginForm] = useState({ username: "", password: "demo1234" });
   const [registerForm, setRegisterForm] = useState({ name: "", username: "", role: "Engineer", password: "", confirmPassword: "" });
   const [resetForm, setResetForm] = useState({ username: "", newPassword: "", confirmPassword: "" });
   const [notice, setNotice] = useState("");
 
   function selectRole(username) {
     setSelectedRole(username);
-    setLoginForm({ username, password: "demo123" });
+    setLoginForm({ username, password: "demo1234" });
   }
 
   function switchMode(nextMode) {
@@ -98,9 +165,11 @@ export default function LoginPage({ onLogin, showError }) {
             </div>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Username<input autoComplete="username" required value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} /></label>
-              <label>Password<input autoComplete="current-password" required type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} /></label>
+              <label>Password<input autoComplete="current-password" required minLength="8" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} /></label>
               <button className="btn">Sign in</button>
             </form>
+            <div className="auth-divider"><span>or</span></div>
+            <GoogleSignIn onLogin={onLogin} showError={showError} />
             <div className="auth-bottom-links">
               <button type="button" onClick={() => switchMode("register")}>Don't have an account?</button>
               <button type="button" onClick={() => switchMode("reset")}>Forget password?</button>
@@ -117,8 +186,8 @@ export default function LoginPage({ onLogin, showError }) {
                 {registerRoles.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </label>
-            <label>Password<input autoComplete="new-password" required minLength="6" type="password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} /></label>
-            <label>Confirm password<input autoComplete="new-password" required minLength="6" type="password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} /></label>
+            <label>Password<input autoComplete="new-password" required minLength="8" type="password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} /><small>Use at least 8 characters.</small></label>
+            <label>Confirm password<input autoComplete="new-password" required minLength="8" type="password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} /></label>
             <button className="btn">Create account</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>
@@ -127,8 +196,8 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "reset" && (
           <form className="login-form" onSubmit={submitReset}>
             <label>Username<input autoComplete="username" required value={resetForm.username} onChange={(event) => setResetForm({ ...resetForm, username: event.target.value })} /></label>
-            <label>New password<input autoComplete="new-password" required minLength="6" type="password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} /></label>
-            <label>Confirm new password<input autoComplete="new-password" required minLength="6" type="password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} /></label>
+            <label>New password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} /><small>Use at least 8 characters.</small></label>
+            <label>Confirm new password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} /></label>
             <button className="btn">Reset password</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>

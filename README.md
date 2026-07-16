@@ -48,7 +48,18 @@ The client runs at `http://localhost:5173`.
 
 ## Demo accounts
 
-All demo accounts use password `demo123`: `engineer`, `sales`, `accounts`, `store`, `management`, `hod`, and `admin`.
+All demo accounts use password `demo1234`: `engineer`, `sales`, `accounts`, `store`, `management`, `hod`, and `admin`.
+
+## Google sign-in
+
+Create a Google OAuth 2.0 Web application client, add the client URL (for example `http://localhost:5173`) as an authorized JavaScript origin, and set the same client ID in both environments:
+
+```text
+client/.env: VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+server environment: GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+New Google users are created with the least-privileged `Engineer` role. Restart both applications after changing environment values.
 
 ## Validation
 

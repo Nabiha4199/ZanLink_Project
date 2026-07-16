@@ -9,6 +9,8 @@ from uuid import uuid4
 from flask import Flask, jsonify, request
 from flask import send_file
 from flask_cors import CORS
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -19,16 +21,17 @@ from reportlab.platypus import TableStyle
 
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 
 
 USERS = [
-    {"id": "u1", "name": "Eng. Amina", "username": "engineer", "password": "demo123", "role": "Engineer", "department": "Engineer"},
-    {"id": "u2", "name": "Sales Team", "username": "sales", "password": "demo123", "role": "Sales", "department": "Sales"},
-    {"id": "u3", "name": "Accounts Team", "username": "accounts", "password": "demo123", "role": "Accounts", "department": "Accounts"},
-    {"id": "u4", "name": "Store Team", "username": "store", "password": "demo123", "role": "Store", "department": "Store"},
-    {"id": "u5", "name": "Managing Director", "username": "management", "password": "demo123", "role": "Management", "department": "Management"},
-    {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo123", "role": "Head of Department", "department": "HOD"},
-    {"id": "u7", "name": "System Admin", "username": "admin", "password": "demo123", "role": "System Admin", "department": "Admin"},
+    {"id": "u1", "name": "Eng. Amina", "username": "engineer", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
+    {"id": "u2", "name": "Sales Team", "username": "sales", "password": "demo1234", "role": "Sales", "department": "Sales"},
+    {"id": "u3", "name": "Accounts Team", "username": "accounts", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
+    {"id": "u4", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
+    {"id": "u5", "name": "Managing Director", "username": "management", "password": "demo1234", "role": "Management", "department": "Management"},
+    {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u7", "name": "System Admin", "username": "admin", "password": "demo1234", "role": "System Admin", "department": "Admin"},
 ]
 
 REGISTERABLE_ROLES = {
@@ -123,6 +126,7 @@ STATE = {
 def public_user(user: dict) -> dict:
     safe = deepcopy(user)
     safe.pop("password", None)
+    safe.pop("googleSub", None)
     return safe
 
 
@@ -132,11 +136,25 @@ def normalize_username(value: str | None) -> str:
 
 def require_password(payload: dict, field: str = "password") -> str:
     password = str(payload.get(field) or "")
-    if len(password) < 6:
-        raise ValueError("Password must be at least 6 characters")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
     if len(password) > 128:
         raise ValueError("Password must be 128 characters or fewer")
     return password
+
+
+def available_username(email: str) -> str:
+    local_part = email.split("@", 1)[0]
+    base = "".join(character for character in local_part if character.isalnum() or character in "._-")[:40]
+    if len(base) < 3:
+        base = f"user-{base}"[:40]
+    username = base
+    suffix = 2
+    while any(user["username"] == username for user in USERS):
+        ending = f"-{suffix}"
+        username = f"{base[:40 - len(ending)]}{ending}"
+        suffix += 1
+    return username
 
 
 def find_user(user_id: str | None) -> dict | None:
@@ -671,9 +689,50 @@ def users():
 def login():
     payload = request.get_json(force=True)
     username = normalize_username(payload.get("username"))
-    user = next((item for item in USERS if item["username"] == username and item["password"] == payload.get("password")), None)
+    user = next((item for item in USERS if item["username"] == username and item.get("password") == payload.get("password")), None)
     if not user:
         return jsonify({"error": "Invalid username or password"}), 401
+    return jsonify(public_user(user))
+
+
+@app.post("/api/auth/google")
+def google_login():
+    if not GOOGLE_CLIENT_ID:
+        return jsonify({"error": "Google sign-in is not configured on the server"}), 503
+
+    credential = str((request.get_json(force=True) or {}).get("credential") or "")
+    if not credential:
+        raise ValueError("Google credential is required")
+
+    try:
+        identity = id_token.verify_oauth2_token(credential, google_requests.Request(), GOOGLE_CLIENT_ID)
+    except ValueError:
+        return jsonify({"error": "Google sign-in could not be verified"}), 401
+
+    email = normalize_username(identity.get("email"))
+    google_sub = str(identity.get("sub") or "")
+    if not google_sub or not email or identity.get("email_verified") not in (True, "true"):
+        return jsonify({"error": "A verified Google account is required"}), 401
+
+    user = next((item for item in USERS if item.get("googleSub") == google_sub), None)
+    if not user:
+        user = next((item for item in USERS if item.get("email") == email), None)
+    if not user:
+        user = {
+            "id": f"u-{uuid4()}",
+            "name": str(identity.get("name") or email.split("@", 1)[0])[:120],
+            "username": available_username(email),
+            "email": email,
+            "googleSub": google_sub,
+            "picture": str(identity.get("picture") or ""),
+            "role": "Engineer",
+            "department": "Engineer",
+        }
+        USERS.append(user)
+    else:
+        user["googleSub"] = google_sub
+        user["email"] = email
+
     return jsonify(public_user(user))
 
 

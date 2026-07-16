@@ -106,6 +106,42 @@ button {
   margin-top: 14px;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
+.google-button,
+.google-disabled {
+  width: 100%;
+  min-height: 44px;
+}
+
+.google-button > div {
+  margin: 0 auto;
+}
+
+.google-disabled {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  cursor: not-allowed;
+  font-weight: 700;
+}
+
 .auth-bottom-links button,
 .auth-back-link {
   min-height: auto;
@@ -145,6 +181,12 @@ label {
   color: #334155;
   font-weight: 700;
   font-size: 15px;
+}
+
+label small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 input,

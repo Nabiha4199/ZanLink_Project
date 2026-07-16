@@ -1,6 +1,8 @@
 # Direct server libraries used by server/app.py
 Flask==3.1.1
 flask-cors==6.0.1
+google-auth>=2.40.0,<3.0.0
+requests>=2.31.0,<3.0.0
 reportlab==4.2.5
 chardet==7.4.3
 pillow==12.3.0

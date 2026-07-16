@@ -4,7 +4,7 @@ Flask API for the Zanlink document workflow. Workflow state is currently held in
 
 ## Environment
 
-Copy `.env.example` values into your shell or hosting environment. Supported settings are `HOST`, `PORT`, `FLASK_DEBUG`, and comma-separated `CORS_ORIGINS`.
+Copy `.env.example` values into your shell or hosting environment. Supported settings are `HOST`, `PORT`, `FLASK_DEBUG`, comma-separated `CORS_ORIGINS`, and `GOOGLE_CLIENT_ID`.
 
 ## Development
 
@@ -30,6 +30,7 @@ wsgi:app
 
 - `GET /api/health`
 - `POST /api/login`
+- `POST /api/auth/google`
 - `GET /api/documents`
 - `POST /api/documents/doc1`
 - `POST /api/documents/maintenance`
