@@ -88,6 +88,41 @@ button {
   gap: 16px;
 }
 
+.auth-notice {
+  margin-top: 16px;
+  padding: 11px 13px;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: var(--ok);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.auth-bottom-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.auth-bottom-links button,
+.auth-back-link {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--brand);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.auth-bottom-links button:hover,
+.auth-back-link:hover {
+  color: var(--brand-strong);
+  text-decoration: underline;
+}
+
 h1,
 h2,
 h3,

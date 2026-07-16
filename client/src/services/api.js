@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 async function request(path, options = {}, user) {
   const headers = {
@@ -15,6 +15,8 @@ async function request(path, options = {}, user) {
 
 export const api = {
   login: (payload) => request("/api/login", { method: "POST", body: JSON.stringify(payload) }),
+  register: (payload) => request("/api/register", { method: "POST", body: JSON.stringify(payload) }),
+  forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
   users: () => request("/api/users"),
   documents: (user, filters = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));

@@ -31,6 +31,15 @@ USERS = [
     {"id": "u7", "name": "System Admin", "username": "admin", "password": "demo123", "role": "System Admin", "department": "Admin"},
 ]
 
+REGISTERABLE_ROLES = {
+    "Engineer": {"role": "Engineer", "department": "Engineer"},
+    "Sales": {"role": "Sales", "department": "Sales"},
+    "Accounts": {"role": "Accounts", "department": "Accounts"},
+    "Store": {"role": "Store", "department": "Store"},
+    "Management": {"role": "Management", "department": "Management"},
+    "HOD": {"role": "Head of Department", "department": "HOD"},
+}
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -115,6 +124,19 @@ def public_user(user: dict) -> dict:
     safe = deepcopy(user)
     safe.pop("password", None)
     return safe
+
+
+def normalize_username(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def require_password(payload: dict, field: str = "password") -> str:
+    password = str(payload.get(field) or "")
+    if len(password) < 6:
+        raise ValueError("Password must be at least 6 characters")
+    if len(password) > 128:
+        raise ValueError("Password must be 128 characters or fewer")
+    return password
 
 
 def find_user(user_id: str | None) -> dict | None:
@@ -648,10 +670,55 @@ def users():
 @app.post("/api/login")
 def login():
     payload = request.get_json(force=True)
-    user = next((item for item in USERS if item["username"] == payload.get("username") and item["password"] == payload.get("password")), None)
+    username = normalize_username(payload.get("username"))
+    user = next((item for item in USERS if item["username"] == username and item["password"] == payload.get("password")), None)
     if not user:
         return jsonify({"error": "Invalid username or password"}), 401
     return jsonify(public_user(user))
+
+
+@app.post("/api/register")
+def register():
+    payload = request.get_json(force=True)
+    username = normalize_username(payload.get("username"))
+    if len(username) < 3:
+        raise ValueError("Username must be at least 3 characters")
+    if len(username) > 40:
+        raise ValueError("Username must be 40 characters or fewer")
+    if not username.replace("_", "").replace(".", "").replace("-", "").isalnum():
+        raise ValueError("Username can contain letters, numbers, dots, hyphens, and underscores")
+    if any(user["username"] == username for user in USERS):
+        raise ValueError("Username is already registered")
+
+    role_key = require_text(payload, "role", "Role", max_length=40)
+    role_info = REGISTERABLE_ROLES.get(role_key)
+    if not role_info:
+        raise ValueError("Please select a valid role")
+
+    user = {
+        "id": f"u-{uuid4()}",
+        "name": require_text(payload, "name", "Full name"),
+        "username": username,
+        "password": require_password(payload),
+        **role_info,
+    }
+    USERS.append(user)
+    return jsonify(public_user(user)), 201
+
+
+@app.post("/api/forgot-password")
+def forgot_password():
+    payload = request.get_json(force=True)
+    username = normalize_username(payload.get("username"))
+    user = next((item for item in USERS if item["username"] == username), None)
+    if not user:
+        raise ValueError("No account was found for that username")
+
+    password = require_password(payload, "newPassword")
+    if password != str(payload.get("confirmPassword") or ""):
+        raise ValueError("Passwords do not match")
+    user["password"] = password
+    return jsonify({"ok": True, "message": "Password updated. You can sign in now."})
 
 
 @app.get("/api/documents")
