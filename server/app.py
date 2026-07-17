@@ -32,7 +32,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
 DEFAULT_GOOGLE_CLIENT_ID = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com"
-GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or DEFAULT_GOOGLE_CLIENT_ID).strip()
+configured_google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_ID = configured_google_client_id or DEFAULT_GOOGLE_CLIENT_ID
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -724,7 +725,13 @@ def value_error(error: ValueError):
 
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "service": "zanlink-backend"})
+    return jsonify({
+        "ok": True,
+        "service": "zanlink-backend",
+        "googleSignInConfigured": bool(GOOGLE_CLIENT_ID),
+        "googleAuthInstalled": bool(google_requests and id_token),
+        "allowedEmailDomain": ALLOWED_EMAIL_DOMAIN,
+    })
 
 
 @app.get("/api/users")
