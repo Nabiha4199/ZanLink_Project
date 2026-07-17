@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import zanlinkLogo from "../assets/zanlink-logo.png";
 import { api } from "../services/api";
 
 const defaultGoogleClientId = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com";
@@ -211,7 +212,7 @@ export default function LoginPage({ onLogin, showError }) {
   return (
     <main className="login-shell">
       <section className="login-panel">
-        <div className="brand-mark">Z</div>
+        <img className="login-brand-logo" src={zanlinkLogo} alt="Zanlink" />
         <h1>Zanlink Document Flow System</h1>
         <p>Sign in with your Zanlink account.</p>
 
