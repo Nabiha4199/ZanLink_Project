@@ -39,13 +39,11 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
 
 
 USERS = [
-    {"id": "u1", "name": "Amina", "username": "engineer", "email": "zda23b007@iitmz.ac.in", "password": "Amina123", "role": "Engineer", "department": "Engineer"},
-    {"id": "u2", "name": "Ayman", "username": "sales", "email": "zda23b009@iitmz.ac.in", "password": "Ayman123", "role": "Sales", "department": "Sales"},
-    {"id": "u3", "name": "Nabiha", "username": "accounts", "email": "zda23b018@iitmz.ac.in", "password": "Nabiha123", "role": "Accounts", "department": "Accounts"},
     {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
     {"id": "u5", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
@@ -172,6 +170,10 @@ def available_username(email: str) -> str:
         username = f"{base[:40 - len(ending)]}{ending}"
         suffix += 1
     return username
+
+
+def is_allowed_email(email: str) -> bool:
+    return email.endswith(f"@{ALLOWED_EMAIL_DOMAIN}")
 
 
 def send_password_reset_email(recipient: str, reset_url: str) -> None:
@@ -754,18 +756,27 @@ def google_login():
         raise ValueError("Google credential is required")
 
     try:
-        identity = id_token.verify_oauth2_token(credential, google_requests.Request(), GOOGLE_CLIENT_ID)
-    except ValueError:
-        return jsonify({"error": "Google sign-in could not be verified"}), 401
+        identity = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10,
+        )
+    except ValueError as error:
+        app.logger.warning("Google credential verification failed: %s", error)
+        return jsonify({"error": f"Google sign-in could not be verified: {error}"}), 401
+    except Exception as error:
+        app.logger.exception("Google verification service failed")
+        return jsonify({"error": f"Google verification service failed: {error}"}), 503
 
     email = normalize_username(identity.get("email"))
     google_sub = str(identity.get("sub") or "")
     if not google_sub or not email or identity.get("email_verified") not in (True, "true"):
         return jsonify({"error": "A verified Google account is required"}), 401
+    if not is_allowed_email(email):
+        return jsonify({"error": f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can sign in."}), 403
 
-    user = next((item for item in USERS if item.get("googleSub") == google_sub), None)
-    if not user:
-        user = next((item for item in USERS if item.get("email") == email), None)
+    user = next((item for item in USERS if item.get("email") == email), None)
     if not user:
         user = {
             "id": f"u-{uuid4()}",
@@ -778,9 +789,11 @@ def google_login():
             "department": "Engineer",
         }
         USERS.append(user)
-    else:
-        user["googleSub"] = google_sub
-        user["email"] = email
+    if user.get("googleSub") and user["googleSub"] != google_sub:
+        return jsonify({"error": "This account is already linked to a different Google identity. Contact support."}), 403
+
+    user["googleSub"] = google_sub
+    user["picture"] = str(identity.get("picture") or user.get("picture") or "")
 
     return jsonify(public_user(user))
 
@@ -791,6 +804,8 @@ def register():
     email = normalize_username(payload.get("email"))
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise ValueError("Enter a valid email address")
+    if not is_allowed_email(email):
+        raise ValueError(f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can register")
     if any(user.get("email") == email for user in USERS):
         raise ValueError("Email is already registered")
 
