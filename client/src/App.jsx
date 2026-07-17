@@ -82,6 +82,17 @@ function App() {
     }
   }
 
+  async function setAccountPassword(payload) {
+    try {
+      const updatedUser = await api.setPassword(user, payload);
+      setUser(updatedUser);
+      setMessage("Password added. You can now sign in with Google or email and password.");
+      setTimeout(() => setMessage(""), 3200);
+    } catch (error) {
+      showError(error);
+    }
+  }
+
   if (!user) return (
     <LoginPage onLogin={setUser} showError={showError} />
   );
@@ -90,6 +101,7 @@ function App() {
     <div className="app-shell">
       <Sidebar user={user} view={view} onNavigate={navigate} onStartTour={startTour} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
       <main className="main">
+        {user.googleLinked && !user.hasPassword && <PasswordSetupCard onSubmit={setAccountPassword} />}
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
         ) : view === "doc1" ? (
@@ -118,6 +130,45 @@ function App() {
       {message && <div className="toast">{message}</div>}
       <GuidedTour open={tourOpen} onClose={closeTour} />
     </div>
+  );
+}
+
+function PasswordSetupCard({ onSubmit }) {
+  const [form, setForm] = useState({ password: "", confirmPassword: "" });
+
+  function submit(event) {
+    event.preventDefault();
+    onSubmit(form);
+  }
+
+  return (
+    <form className="account-password-card" onSubmit={submit}>
+      <div>
+        <strong>Add password sign-in</strong>
+        <span>This Google account can also use email and password after you create an app password.</span>
+      </div>
+      <label>Password
+        <input
+          autoComplete="new-password"
+          minLength="8"
+          required
+          type="password"
+          value={form.password}
+          onChange={(event) => setForm({ ...form, password: event.target.value })}
+        />
+      </label>
+      <label>Confirm
+        <input
+          autoComplete="new-password"
+          minLength="8"
+          required
+          type="password"
+          value={form.confirmPassword}
+          onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })}
+        />
+      </label>
+      <button className="btn" type="submit">Save password</button>
+    </form>
   );
 }
 

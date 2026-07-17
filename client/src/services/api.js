@@ -17,6 +17,7 @@ export const api = {
   login: (payload) => request("/api/login", { method: "POST", body: JSON.stringify(payload) }),
   googleLogin: (credential) => request("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   register: (payload) => request("/api/register", { method: "POST", body: JSON.stringify(payload) }),
+  setPassword: (user, payload) => request("/api/account/password", { method: "POST", body: JSON.stringify(payload) }, user),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
   resetPassword: (payload) => request("/api/reset-password", { method: "POST", body: JSON.stringify(payload) }),
   users: () => request("/api/users"),

@@ -499,6 +499,43 @@ textarea {
   overflow: auto;
 }
 
+.account-password-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.55fr) minmax(160px, 0.55fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.account-password-card strong,
+.account-password-card span {
+  display: block;
+}
+
+.account-password-card strong {
+  color: var(--brand-strong);
+  font-size: 18px;
+}
+
+.account-password-card span {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.account-password-card label {
+  gap: 5px;
+}
+
+.account-password-card input {
+  min-height: 42px;
+}
+
 .topbar {
   display: flex;
   align-items: flex-start;
@@ -946,6 +983,7 @@ tr:last-child td {
   .stats,
   .filters,
   .form-grid,
+  .account-password-card,
   .role-step {
     grid-template-columns: 1fr;
   }

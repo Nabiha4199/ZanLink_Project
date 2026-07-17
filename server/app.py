@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import re
 import secrets
 import smtplib
 from io import BytesIO
@@ -43,12 +44,13 @@ SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
+EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
 
 
 USERS = [
     {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
-    {"id": "u5", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
-    {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u5", "name": "Store Team", "username": "store", "email": "store@iitmz.ac.in", "password": "demo1234", "role": "Store", "department": "Store"},
+    {"id": "u6", "name": "Head of Department", "username": "hod", "email": "hod@iitmz.ac.in", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
 ]
 
 REGISTERABLE_ROLES = {
@@ -142,6 +144,8 @@ STATE = {
 
 def public_user(user: dict) -> dict:
     safe = deepcopy(user)
+    safe["hasPassword"] = bool(user.get("password"))
+    safe["googleLinked"] = bool(user.get("googleSub"))
     safe.pop("password", None)
     safe.pop("googleSub", None)
     return safe
@@ -149,6 +153,13 @@ def public_user(user: dict) -> dict:
 
 def normalize_username(value: str | None) -> str:
     return str(value or "").strip().lower()
+
+
+def normalize_email(value: str | None) -> str:
+    email = normalize_username(value)
+    if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
+        raise ValueError("Enter a valid email address")
+    return email
 
 
 def require_password(payload: dict, field: str = "password") -> str:
@@ -176,6 +187,13 @@ def available_username(email: str) -> str:
 
 def is_allowed_email(email: str) -> bool:
     return email.endswith(f"@{ALLOWED_EMAIL_DOMAIN}")
+
+
+def require_allowed_email(value: str | None, action: str = "use") -> str:
+    email = normalize_email(value)
+    if not is_allowed_email(email):
+        raise ValueError(f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can {action}")
+    return email
 
 
 def send_password_reset_email(recipient: str, reset_url: str) -> None:
@@ -742,10 +760,13 @@ def users():
 @app.post("/api/login")
 def login():
     payload = request.get_json(force=True)
-    email = normalize_username(payload.get("email"))
+    email = require_allowed_email(payload.get("email"), "sign in")
     selected_role = str(payload.get("role") or "").strip()
     if not selected_role:
         raise ValueError("Please select your role")
+    existing_user = next((item for item in USERS if item.get("email") == email), None)
+    if existing_user and not existing_user.get("password"):
+        return jsonify({"error": "This account uses Google sign-in. Use Sign in with Google or reset your password first."}), 401
     user = next((item for item in USERS if item.get("email") == email and item.get("password") == payload.get("password")), None)
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
@@ -779,12 +800,13 @@ def google_login():
         app.logger.exception("Google verification service failed")
         return jsonify({"error": f"Google verification service failed: {error}"}), 503
 
-    email = normalize_username(identity.get("email"))
+    try:
+        email = require_allowed_email(identity.get("email"), "sign in")
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 403
     google_sub = str(identity.get("sub") or "")
     if not google_sub or not email or identity.get("email_verified") not in (True, "true"):
         return jsonify({"error": "A verified Google account is required"}), 401
-    if not is_allowed_email(email):
-        return jsonify({"error": f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can sign in."}), 403
 
     user = next((item for item in USERS if item.get("email") == email), None)
     if not user:
@@ -811,18 +833,24 @@ def google_login():
 @app.post("/api/register")
 def register():
     payload = request.get_json(force=True)
-    email = normalize_username(payload.get("email"))
-    if "@" not in email or email.startswith("@") or email.endswith("@"):
-        raise ValueError("Enter a valid email address")
-    if not is_allowed_email(email):
-        raise ValueError(f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can register")
-    if any(user.get("email") == email for user in USERS):
-        raise ValueError("Email is already registered")
+    email = require_allowed_email(payload.get("email"), "register")
 
     role_key = require_text(payload, "role", "Role", max_length=40)
     role_info = REGISTERABLE_ROLES.get(role_key)
     if not role_info:
         raise ValueError("Please select a valid role")
+
+    existing_user = next((user for user in USERS if user.get("email") == email), None)
+    if existing_user:
+        if existing_user.get("password"):
+            raise ValueError("Email is already registered")
+        if not existing_user.get("googleSub"):
+            raise ValueError("Email is already registered")
+
+        existing_user["name"] = require_text(payload, "name", "Full name")
+        existing_user["password"] = require_password(payload)
+        existing_user.update(role_info)
+        return jsonify(public_user(existing_user))
 
     user = {
         "id": f"u-{uuid4()}",
@@ -836,13 +864,22 @@ def register():
     return jsonify(public_user(user)), 201
 
 
+@app.post("/api/account/password")
+def set_account_password():
+    user = current_user()
+    payload = request.get_json(force=True)
+    password = require_password(payload, "password")
+    if password != str(payload.get("confirmPassword") or ""):
+        raise ValueError("Passwords do not match")
+    user["password"] = password
+    return jsonify(public_user(user))
+
+
 @app.post("/api/forgot-password")
 def forgot_password():
     payload = request.get_json(force=True)
-    email = normalize_username(payload.get("email"))
+    email = require_allowed_email(payload.get("email"), "reset a password")
     selected_role = str(payload.get("role") or "").strip()
-    if "@" not in email:
-        raise ValueError("Enter a valid email address")
     if not selected_role:
         raise ValueError("Please select your role")
 
