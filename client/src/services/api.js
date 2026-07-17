@@ -1,14 +1,32 @@
 const API_URL = import.meta.env.VITE_API_URL || "";
+const SESSION_KEY = "zanlink-session";
 
-async function request(path, options = {}, user) {
+function storedSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function authenticationHeaders() {
+  const token = storedSession()?.accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function request(path, options = {}, authenticated = false) {
   const headers = {
     "Content-Type": "application/json",
+    ...(authenticated ? authenticationHeaders() : {}),
     ...(options.headers || {}),
   };
-  if (user?.id) headers["X-User-Id"] = user.id;
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401 && authenticated) {
+    localStorage.removeItem(SESSION_KEY);
+    window.dispatchEvent(new CustomEvent("zanlink:session-expired", { detail: data.error }));
+  }
   if (!response.ok) throw new Error(data.error || "Request failed");
   return data;
 }
@@ -19,23 +37,25 @@ export const api = {
   register: (payload) => request("/api/register", { method: "POST", body: JSON.stringify(payload) }),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
   resetPassword: (payload) => request("/api/reset-password", { method: "POST", body: JSON.stringify(payload) }),
-  users: () => request("/api/users"),
+  me: () => request("/api/auth/me", {}, true),
+  users: () => request("/api/users", {}, true),
+  updateUserAccess: (id, payload) => request(`/api/admin/users/${id}/access`, { method: "PATCH", body: JSON.stringify(payload) }, true),
   documents: (user, filters = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
-    return request(`/api/documents?${params.toString()}`, {}, user);
+    return request(`/api/documents?${params.toString()}`, {}, true);
   },
-  createDoc1: (user, payload) => request("/api/documents/doc1", { method: "POST", body: JSON.stringify(payload) }, user),
-  createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, user),
-  sales: (user, id, payload) => request(`/api/documents/${id}/sales`, { method: "POST", body: JSON.stringify(payload) }, user),
-  accounts: (user, id, payload) => request(`/api/documents/${id}/accounts`, { method: "POST", body: JSON.stringify(payload) }, user),
-  store: (user, id, payload) => request(`/api/documents/${id}/store`, { method: "POST", body: JSON.stringify(payload) }, user),
-  management: (user, id, payload) => request(`/api/documents/${id}/management`, { method: "POST", body: JSON.stringify(payload) }, user),
-  hod: (user, id, payload) => request(`/api/documents/${id}/hod`, { method: "POST", body: JSON.stringify(payload) }, user),
-  summaries: (user) => request("/api/summaries", {}, user),
-  reports: (user) => request("/api/reports", {}, user),
+  createDoc1: (user, payload) => request("/api/documents/doc1", { method: "POST", body: JSON.stringify(payload) }, true),
+  createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, true),
+  sales: (user, id, payload) => request(`/api/documents/${id}/sales`, { method: "POST", body: JSON.stringify(payload) }, true),
+  accounts: (user, id, payload) => request(`/api/documents/${id}/accounts`, { method: "POST", body: JSON.stringify(payload) }, true),
+  store: (user, id, payload) => request(`/api/documents/${id}/store`, { method: "POST", body: JSON.stringify(payload) }, true),
+  management: (user, id, payload) => request(`/api/documents/${id}/management`, { method: "POST", body: JSON.stringify(payload) }, true),
+  hod: (user, id, payload) => request(`/api/documents/${id}/hod`, { method: "POST", body: JSON.stringify(payload) }, true),
+  summaries: () => request("/api/summaries", {}, true),
+  reports: () => request("/api/reports", {}, true),
   downloadSummary: async (user, id) => {
     const response = await fetch(`${API_URL}/api/summaries/${id}/download`, {
-      headers: { "X-User-Id": user.id },
+      headers: authenticationHeaders(),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -45,7 +65,7 @@ export const api = {
   },
   downloadDocument: async (user, id, kind) => {
     const response = await fetch(`${API_URL}/api/documents/${id}/downloads/${kind}`, {
-      headers: { "X-User-Id": user.id },
+      headers: authenticationHeaders(),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));

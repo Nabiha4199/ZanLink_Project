@@ -13,9 +13,7 @@ A client/server workflow application built with React, Vite, Flask, and ReportLa
 │       ├── pages/          # Application pages
 │       ├── services/       # HTTP API client
 │       └── utils/          # Formatting and permissions
-├── server/                 # Flask API and PDF generation
-├── legacy/                 # Original static prototype
-└── workflow-smoke.test.js  # Legacy workflow regression test
+└── server/                 # Flask API, authentication, and PDF generation
 ```
 
 ## Start the server
@@ -46,9 +44,16 @@ npm run dev
 
 The client runs at `http://localhost:5173`.
 
-## Demo accounts
+## Authentication and account approval
 
-All demo accounts use password `demo1234`: `engineer`, `sales`, `accounts`, `store`, `management`, `hod`, and `admin`.
+Passwords are hashed in SQLite and successful login returns a signed, expiring access token. Registration creates a pending account:
+
+1. The user submits their name, email, requested role, and password.
+2. A system administrator signs in and opens **User Access**.
+3. The administrator verifies the role and selects **Approve**.
+4. The user can then sign in with their password or the same registered Google email.
+
+Pending and disabled accounts cannot sign in. Role and status changes invalidate existing sessions.
 
 ## Google sign-in
 
@@ -56,10 +61,10 @@ Create a Google OAuth 2.0 Web application client, add the client URL (for exampl
 
 ```text
 client/.env: VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-server environment: GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+server/.env.local: GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
-New Google users are created with the least-privileged `Engineer` role. Restart both applications after changing environment values.
+Google sign-in is limited to email addresses that are already registered in the system. Restart both applications after changing environment values.
 
 ## Validation
 
@@ -67,7 +72,6 @@ New Google users are created with the least-privileged `Engineer` role. Restart 
 cd client && npm run build
 cd ..
 python3 -m py_compile server/app.py server/wsgi.py
-node workflow-smoke.test.js
 ```
 
 The server currently stores workflow state in memory. A future persistence layer can replace `STATE` in `server/app.py` without changing the client API service.

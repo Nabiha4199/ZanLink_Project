@@ -78,7 +78,7 @@ function EyeIcon({ hidden }) {
   );
 }
 
-function PasswordField({ label, value, onChange, autoComplete, helper }) {
+function PasswordField({ label, value, onChange, autoComplete, helper, minLength = 8 }) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -87,7 +87,7 @@ function PasswordField({ label, value, onChange, autoComplete, helper }) {
         <input
           autoComplete={autoComplete}
           required
-          minLength="8"
+          minLength={minLength}
           type={visible ? "text" : "password"}
           value={value}
           onChange={onChange}
@@ -106,16 +106,6 @@ function PasswordField({ label, value, onChange, autoComplete, helper }) {
   );
 }
 
-const demoUsers = [
-  ["Engineer", "Engineer"],
-  ["Sales", "Sales"],
-  ["Accounts", "Accounts"],
-  ["Store", "Store"],
-  ["Management", "Management"],
-  ["HOD", "Head of Department"],
-  ["System Admin", "System Admin"],
-];
-
 const registerRoles = [
   ["Engineer", "Engineer"],
   ["Sales", "Sales"],
@@ -128,11 +118,9 @@ const registerRoles = [
 export default function LoginPage({ onLogin, showError }) {
   const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
   const [mode, setMode] = useState(resetToken ? "reset-password" : "login");
-  const [selectedRole, setSelectedRole] = useState("");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ name: "", email: "", role: "Engineer", password: "", confirmPassword: "" });
   const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotRole, setForgotRole] = useState("");
   const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
   const [notice, setNotice] = useState("");
   const [authError, setAuthError] = useState("");
@@ -140,10 +128,6 @@ export default function LoginPage({ onLogin, showError }) {
   function reportAuthError(error) {
     setNotice("");
     setAuthError(error?.message || String(error));
-  }
-
-  function selectRole(role) {
-    setSelectedRole(role);
   }
 
   function switchMode(nextMode) {
@@ -156,7 +140,7 @@ export default function LoginPage({ onLogin, showError }) {
     event.preventDefault();
     setAuthError("");
     try {
-      onLogin(await api.login({ ...loginForm, role: selectedRole }));
+      onLogin(await api.login(loginForm));
     } catch (error) {
       reportAuthError(error);
     }
@@ -169,7 +153,11 @@ export default function LoginPage({ onLogin, showError }) {
       return;
     }
     try {
-      onLogin(await api.register(registerForm));
+      const response = await api.register(registerForm);
+      setNotice(response.message);
+      setAuthError("");
+      setRegisterForm({ name: "", email: "", role: "Engineer", password: "", confirmPassword: "" });
+      setMode("login");
     } catch (error) {
       reportAuthError(error);
     }
@@ -178,11 +166,10 @@ export default function LoginPage({ onLogin, showError }) {
   async function submitForgotPassword(event) {
     event.preventDefault();
     try {
-      const response = await api.forgotPassword({ email: forgotEmail, role: forgotRole });
+      const response = await api.forgotPassword({ email: forgotEmail });
       setNotice(response.message);
       setAuthError("");
       setForgotEmail("");
-      setForgotRole("");
       setMode("login");
     } catch (error) {
       reportAuthError(error);
@@ -219,14 +206,6 @@ export default function LoginPage({ onLogin, showError }) {
 
         {mode === "login" && (
           <>
-            <div className="role-step">
-              <label htmlFor="role">Select role
-                <select id="role" value={selectedRole} onChange={(event) => selectRole(event.target.value)}>
-                  <option value="" disabled>Choose your role</option>
-                  {demoUsers.map(([role, label]) => <option value={role} key={role}>{label}</option>)}
-                </select>
-              </label>
-            </div>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Email<input autoComplete="email" required type="email" value={loginForm.email} onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })} /></label>
               <PasswordField label="Password" autoComplete="current-password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
@@ -250,9 +229,9 @@ export default function LoginPage({ onLogin, showError }) {
                 {registerRoles.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </label>
-            <PasswordField label="Password" autoComplete="new-password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} helper="Use at least 8 characters." />
-            <PasswordField label="Confirm password" autoComplete="new-password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} />
-            <button className="btn">Create account</button>
+            <PasswordField label="Password" autoComplete="new-password" minLength={10} value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} helper="Use at least 10 characters with a letter and number." />
+            <PasswordField label="Confirm password" autoComplete="new-password" minLength={10} value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} />
+            <button className="btn">Submit registration</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>
         )}
@@ -260,13 +239,7 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "forgot" && (
           <form className="login-form" onSubmit={submitForgotPassword}>
             <h2>Reset your password</h2>
-            <p>Select your role and enter the email address connected to that account. We will send you a secure reset link.</p>
-            <label>Role
-              <select required value={forgotRole} onChange={(event) => setForgotRole(event.target.value)}>
-                <option value="" disabled>Choose your role</option>
-                {demoUsers.map(([role, label]) => <option value={role} key={role}>{label}</option>)}
-              </select>
-            </label>
+            <p>Enter your account email. If an active account exists, we will send a secure reset link.</p>
             <label>Email<input autoComplete="email" required type="email" value={forgotEmail} onChange={(event) => setForgotEmail(event.target.value)} /></label>
             <button className="btn">Send reset link</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
@@ -276,8 +249,8 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "reset-password" && (
           <form className="login-form" onSubmit={submitResetPassword}>
             <h2>Choose a new password</h2>
-            <PasswordField label="New password" autoComplete="new-password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} helper="Use at least 8 characters." />
-            <PasswordField label="Confirm new password" autoComplete="new-password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} />
+            <PasswordField label="New password" autoComplete="new-password" minLength={10} value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} helper="Use at least 10 characters with a letter and number." />
+            <PasswordField label="Confirm new password" autoComplete="new-password" minLength={10} value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} />
             <button className="btn">Reset password</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>

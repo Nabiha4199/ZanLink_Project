@@ -4,3 +4,7 @@ dist/
 __pycache__/
 *.pyc
 .env
+.env.local
+.auth-secret
+*.db
+*.db-journal
