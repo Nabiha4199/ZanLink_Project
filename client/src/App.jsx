@@ -6,12 +6,19 @@ import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ReportsPage from "./pages/ReportsPage";
+import UserAccessPage from "./pages/UserAccessPage";
 import { api } from "./services/api";
 import { formatDate, money } from "./utils/formatters";
 import { canAct, statusClass } from "./utils/permissions";
 
 function App() {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("zanlink-user") || "null"));
+  const [session, setSession] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("zanlink-session") || "null");
+    } catch {
+      return null;
+    }
+  });
   const [view, setView] = useState("dashboard");
   const [documents, setDocuments] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -19,6 +26,7 @@ function App() {
   const [reports, setReports] = useState(null);
   const [filters, setFilters] = useState({ q: "", type: "", status: "", department: "" });
   const [message, setMessage] = useState("");
+  const user = session?.user || null;
 
   const selected = documents.find((doc) => doc.id === selectedId);
 
@@ -35,11 +43,36 @@ function App() {
   }
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem("zanlink-user", JSON.stringify(user));
-      refresh().catch(showError);
+    if (!session) return undefined;
+    localStorage.setItem("zanlink-session", JSON.stringify(session));
+    api.me()
+      .then((freshUser) => {
+        setSession((current) => current ? { ...current, user: freshUser } : null);
+        refresh().catch(showError);
+      })
+      .catch(showError);
+    return undefined;
+  }, [session?.accessToken]);
+
+  useEffect(() => {
+    function sessionExpired(event) {
+      setSession(null);
+      setMessage(event.detail || "Your session has expired. Sign in again.");
     }
-  }, [user]);
+    window.addEventListener("zanlink:session-expired", sessionExpired);
+    return () => window.removeEventListener("zanlink:session-expired", sessionExpired);
+  }, []);
+
+  function acceptSession(nextSession) {
+    localStorage.setItem("zanlink-session", JSON.stringify(nextSession));
+    setSession(nextSession);
+  }
+
+  function logout() {
+    localStorage.removeItem("zanlink-session");
+    setSession(null);
+    setView("dashboard");
+  }
 
   function showError(error) {
     setMessage(error.message || String(error));
@@ -65,12 +98,12 @@ function App() {
   }
 
   if (!user) return (
-    <LoginPage onLogin={setUser} showError={showError} />
+    <LoginPage onLogin={acceptSession} showError={showError} />
   );
 
   return (
     <div className="app-shell">
-      <Sidebar user={user} view={view} onNavigate={navigate} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
+      <Sidebar user={user} view={view} onNavigate={navigate} onLogout={logout} />
       <main className="main">
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
@@ -82,6 +115,8 @@ function App() {
           <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
           <ReportsPage reports={reports} />
+        ) : view === "users" && user.role === "System Admin" ? (
+          <UserAccessPage showError={showError} />
         ) : (
           <DashboardPage
             user={user}

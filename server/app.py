@@ -1,37 +1,68 @@
 from __future__ import annotations
 
 import os
-import hashlib
 import secrets
 import smtplib
+import sqlite3
+import time
 from io import BytesIO
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from email.message import EmailMessage
+from pathlib import Path
 from uuid import uuid4
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask import send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 try:
+    from google.auth.exceptions import GoogleAuthError
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
 except ModuleNotFoundError:
+    class GoogleAuthError(Exception):
+        pass
+
     google_requests = None
     id_token = None
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table
 from reportlab.platypus import TableStyle
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
-load_dotenv()
+SERVER_DIR = Path(__file__).resolve().parent
+load_dotenv(SERVER_DIR / ".env.local")
+
+# Local development uses the same public OAuth client ID as the Vite client.
+# Explicit server environment variables still take precedence in production.
+if not os.getenv("GOOGLE_CLIENT_ID"):
+    load_dotenv(SERVER_DIR.parent / "client" / ".env")
+
+
+def load_auth_secret() -> str:
+    configured = os.getenv("AUTH_SECRET", "").strip()
+    if configured:
+        return configured
+    secret_file = SERVER_DIR / ".auth-secret"
+    if secret_file.exists():
+        persisted = secret_file.read_text(encoding="utf-8").strip()
+        if persisted:
+            return persisted
+    generated = secrets.token_urlsafe(48)
+    secret_file.write_text(generated, encoding="utf-8")
+    secret_file.chmod(0o600)
+    return generated
+
+
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or os.getenv("VITE_GOOGLE_CLIENT_ID", "")).strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -39,14 +70,22 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-PASSWORD_RESET_TOKENS = {}
+AUTH_SECRET = load_auth_secret()
+AUTH_TOKEN_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "28800"))
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", str(SERVER_DIR / "zanlink.db")))
+if not DATABASE_PATH.is_absolute():
+    DATABASE_PATH = SERVER_DIR / DATABASE_PATH
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "zda23b014@iitmz.ac.in").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Abdallah123")
+LOGIN_ATTEMPTS = {}
+AUTH_SERIALIZER = URLSafeTimedSerializer(AUTH_SECRET)
+DUMMY_PASSWORD_HASH = generate_password_hash("not-a-real-user-password")
 
-
-USERS = [
+SEED_USERS = [
     {"id": "u1", "name": "Amina", "username": "engineer", "email": "zda23b007@iitmz.ac.in", "password": "Amina123", "role": "Engineer", "department": "Engineer"},
     {"id": "u2", "name": "Ayman", "username": "sales", "email": "zda23b009@iitmz.ac.in", "password": "Ayman123", "role": "Sales", "department": "Sales"},
     {"id": "u3", "name": "Nabiha", "username": "accounts", "email": "zda23b018@iitmz.ac.in", "password": "Nabiha123", "role": "Accounts", "department": "Accounts"},
-    {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
+    {"id": "u4", "name": "Abdallah", "username": "admin", "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD, "role": "System Admin", "department": "Management"},
     {"id": "u5", "name": "Store Team", "username": "store", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
 ]
@@ -60,9 +99,83 @@ REGISTERABLE_ROLES = {
     "HOD": {"role": "Head of Department", "department": "HOD"},
 }
 
+USER_COLUMNS = {
+    "name",
+    "username",
+    "email",
+    "passwordHash",
+    "role",
+    "department",
+    "status",
+    "googleSub",
+    "picture",
+    "authVersion",
+    "approvedAt",
+    "approvedBy",
+}
+
+
+def database_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database() -> None:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with database_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT UNIQUE COLLATE NOCASE,
+                passwordHash TEXT,
+                role TEXT NOT NULL,
+                department TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                googleSub TEXT UNIQUE,
+                picture TEXT NOT NULL DEFAULT '',
+                authVersion INTEGER NOT NULL DEFAULT 1,
+                createdAt TEXT NOT NULL,
+                approvedAt TEXT,
+                approvedBy TEXT
+            )
+            """
+        )
+        existing_ids = {
+            row["id"]
+            for row in connection.execute("SELECT id FROM users").fetchall()
+        }
+        for user in SEED_USERS:
+            if user["id"] in existing_ids:
+                continue
+            connection.execute(
+                """
+                INSERT INTO users (
+                    id, name, username, email, passwordHash, role, department,
+                    status, authVersion, createdAt, approvedAt, approvedBy
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?, 'system')
+                """,
+                (
+                    user["id"],
+                    user["name"],
+                    user["username"],
+                    user.get("email"),
+                    generate_password_hash(user["password"]),
+                    user["role"],
+                    user["department"],
+                    now_iso(),
+                    now_iso(),
+                ),
+            )
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+initialize_database()
 
 
 def history(user_id: str, action: str, note: str = "") -> dict:
@@ -142,7 +255,7 @@ STATE = {
 
 def public_user(user: dict) -> dict:
     safe = deepcopy(user)
-    safe.pop("password", None)
+    safe.pop("passwordHash", None)
     safe.pop("googleSub", None)
     return safe
 
@@ -153,10 +266,12 @@ def normalize_username(value: str | None) -> str:
 
 def require_password(payload: dict, field: str = "password") -> str:
     password = str(payload.get(field) or "")
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters")
+    if len(password) < 10:
+        raise ValueError("Password must be at least 10 characters")
     if len(password) > 128:
         raise ValueError("Password must be 128 characters or fewer")
+    if not any(character.isalpha() for character in password) or not any(character.isdigit() for character in password):
+        raise ValueError("Password must contain at least one letter and one number")
     return password
 
 
@@ -167,10 +282,14 @@ def available_username(email: str) -> str:
         base = f"user-{base}"[:40]
     username = base
     suffix = 2
-    while any(user["username"] == username for user in USERS):
+    with database_connection() as connection:
+        existing = connection.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
+    while existing:
         ending = f"-{suffix}"
         username = f"{base[:40 - len(ending)]}{ending}"
         suffix += 1
+        with database_connection() as connection:
+            existing = connection.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
     return username
 
 
@@ -195,7 +314,80 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
 
 
 def find_user(user_id: str | None) -> dict | None:
-    return next((user for user in USERS if user["id"] == user_id), None)
+    if not user_id:
+        return None
+    with database_connection() as connection:
+        row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def find_user_by_email(email: str) -> dict | None:
+    with database_connection() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (email,)).fetchone()
+    return dict(row) if row else None
+
+
+def find_user_by_google_sub(google_sub: str) -> dict | None:
+    with database_connection() as connection:
+        row = connection.execute("SELECT * FROM users WHERE googleSub = ?", (google_sub,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    with database_connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM users ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, createdAt DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def insert_user(user: dict) -> None:
+    with database_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO users (
+                id, name, username, email, passwordHash, role, department,
+                status, googleSub, picture, authVersion, createdAt, approvedAt, approvedBy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                user["name"],
+                user["username"],
+                user.get("email"),
+                user.get("passwordHash"),
+                user["role"],
+                user["department"],
+                user.get("status", "pending"),
+                user.get("googleSub"),
+                user.get("picture", ""),
+                user.get("authVersion", 1),
+                user.get("createdAt", now_iso()),
+                user.get("approvedAt"),
+                user.get("approvedBy"),
+            ),
+        )
+
+
+def update_user(user_id: str, **changes) -> dict:
+    invalid = set(changes) - USER_COLUMNS
+    if invalid:
+        raise ValueError(f"Unsupported user fields: {', '.join(sorted(invalid))}")
+    if not changes:
+        user = find_user(user_id)
+        if not user:
+            raise ValueError("User not found")
+        return user
+    assignments = ", ".join(f"{field} = ?" for field in changes)
+    with database_connection() as connection:
+        connection.execute(
+            f"UPDATE users SET {assignments} WHERE id = ?",
+            (*changes.values(), user_id),
+        )
+    user = find_user(user_id)
+    if not user:
+        raise ValueError("User not found")
+    return user
 
 
 def user_has_role(user: dict, selected_role: str) -> bool:
@@ -223,11 +415,66 @@ def next_number(kind: str) -> str:
     return f"REQ-{value:06d}"
 
 
+class AuthenticationError(Exception):
+    pass
+
+
+def issue_session(user: dict) -> dict:
+    token = AUTH_SERIALIZER.dumps(
+        {"userId": user["id"], "authVersion": user.get("authVersion", 1)},
+        salt="zanlink-access",
+    )
+    return {"accessToken": token, "expiresIn": AUTH_TOKEN_TTL_SECONDS, "user": public_user(user)}
+
+
 def current_user() -> dict:
-    user = find_user(request.headers.get("X-User-Id"))
-    if not user:
-        raise PermissionError("Missing or invalid X-User-Id header")
+    cached = getattr(g, "authenticated_user", None)
+    if cached:
+        return cached
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise AuthenticationError("Authentication is required")
+    try:
+        claims = AUTH_SERIALIZER.loads(token, salt="zanlink-access", max_age=AUTH_TOKEN_TTL_SECONDS)
+    except SignatureExpired as error:
+        raise AuthenticationError("Your session has expired. Sign in again.") from error
+    except BadSignature as error:
+        raise AuthenticationError("Invalid authentication token") from error
+
+    user = find_user(str(claims.get("userId") or ""))
+    if not user or int(claims.get("authVersion", 0)) != int(user.get("authVersion", 1)):
+        raise AuthenticationError("Your session is no longer valid")
+    if user.get("status") != "active":
+        raise AuthenticationError("Your account does not currently have access")
+    g.authenticated_user = user
     return user
+
+
+def require_admin() -> dict:
+    user = current_user()
+    if user["role"] != "System Admin":
+        raise PermissionError("System administrator access is required")
+    return user
+
+
+def enforce_login_rate_limit(email: str) -> None:
+    key = (request.remote_addr or "unknown", email)
+    now = time.monotonic()
+    attempts = [attempt for attempt in LOGIN_ATTEMPTS.get(key, []) if now - attempt < 900]
+    LOGIN_ATTEMPTS[key] = attempts
+    if len(attempts) >= 5:
+        raise AuthenticationError("Too many failed sign-in attempts. Try again in 15 minutes.")
+
+
+def record_failed_login(email: str) -> None:
+    key = (request.remote_addr or "unknown", email)
+    LOGIN_ATTEMPTS.setdefault(key, []).append(time.monotonic())
+
+
+def clear_failed_logins(email: str) -> None:
+    LOGIN_ATTEMPTS.pop((request.remote_addr or "unknown", email), None)
 
 
 def require_department(user: dict, *departments: str) -> None:
@@ -714,6 +961,11 @@ def permission_error(error: PermissionError):
     return jsonify({"error": str(error)}), 403
 
 
+@app.errorhandler(AuthenticationError)
+def authentication_error(error: AuthenticationError):
+    return jsonify({"error": str(error)}), 401
+
+
 @app.errorhandler(ValueError)
 def value_error(error: ValueError):
     return jsonify({"error": str(error)}), 400
@@ -726,22 +978,32 @@ def health():
 
 @app.get("/api/users")
 def users():
-    return jsonify([public_user(user) for user in USERS])
+    require_admin()
+    return jsonify([public_user(user) for user in list_users()])
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    return jsonify(public_user(current_user()))
 
 
 @app.post("/api/login")
 def login():
     payload = request.get_json(force=True)
     email = normalize_username(payload.get("email"))
-    selected_role = str(payload.get("role") or "").strip()
-    if not selected_role:
-        raise ValueError("Please select your role")
-    user = next((item for item in USERS if item.get("email") == email and item.get("password") == payload.get("password")), None)
-    if not user:
+    enforce_login_rate_limit(email)
+    user = find_user_by_email(email)
+    password_hash = user.get("passwordHash") if user else DUMMY_PASSWORD_HASH
+    password_valid = check_password_hash(password_hash or DUMMY_PASSWORD_HASH, str(payload.get("password") or ""))
+    if not user or not password_valid:
+        record_failed_login(email)
         return jsonify({"error": "Invalid email or password"}), 401
-    if not user_has_role(user, selected_role):
-        return jsonify({"error": "The selected role does not match this account"}), 403
-    return jsonify(public_user(user))
+    if user.get("status") == "pending":
+        return jsonify({"error": "Your account is awaiting administrator approval."}), 403
+    if user.get("status") != "active":
+        return jsonify({"error": "Your account access has been disabled. Contact the system administrator."}), 403
+    clear_failed_logins(email)
+    return jsonify(issue_session(user))
 
 
 @app.post("/api/auth/google")
@@ -757,32 +1019,26 @@ def google_login():
         identity = id_token.verify_oauth2_token(credential, google_requests.Request(), GOOGLE_CLIENT_ID)
     except ValueError:
         return jsonify({"error": "Google sign-in could not be verified"}), 401
+    except GoogleAuthError:
+        return jsonify({"error": "Google verification service is temporarily unavailable"}), 503
 
     email = normalize_username(identity.get("email"))
     google_sub = str(identity.get("sub") or "")
     if not google_sub or not email or identity.get("email_verified") not in (True, "true"):
         return jsonify({"error": "A verified Google account is required"}), 401
 
-    user = next((item for item in USERS if item.get("googleSub") == google_sub), None)
+    user = find_user_by_google_sub(google_sub)
     if not user:
-        user = next((item for item in USERS if item.get("email") == email), None)
+        user = find_user_by_email(email)
     if not user:
-        user = {
-            "id": f"u-{uuid4()}",
-            "name": str(identity.get("name") or email.split("@", 1)[0])[:120],
-            "username": available_username(email),
-            "email": email,
-            "googleSub": google_sub,
-            "picture": str(identity.get("picture") or ""),
-            "role": "Engineer",
-            "department": "Engineer",
-        }
-        USERS.append(user)
-    else:
-        user["googleSub"] = google_sub
-        user["email"] = email
+        return jsonify({"error": "This Google account is not registered. Register an account first or contact the system administrator."}), 403
+    if user.get("status") == "pending":
+        return jsonify({"error": "Your account is awaiting administrator approval."}), 403
+    if user.get("status") != "active":
+        return jsonify({"error": "Your account access has been disabled. Contact the system administrator."}), 403
 
-    return jsonify(public_user(user))
+    user = update_user(user["id"], googleSub=google_sub)
+    return jsonify(issue_session(user))
 
 
 @app.post("/api/register")
@@ -791,7 +1047,7 @@ def register():
     email = normalize_username(payload.get("email"))
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise ValueError("Enter a valid email address")
-    if any(user.get("email") == email for user in USERS):
+    if find_user_by_email(email):
         raise ValueError("Email is already registered")
 
     role_key = require_text(payload, "role", "Role", max_length=40)
@@ -804,61 +1060,97 @@ def register():
         "name": require_text(payload, "name", "Full name"),
         "username": available_username(email),
         "email": email,
-        "password": require_password(payload),
+        "passwordHash": generate_password_hash(require_password(payload)),
+        "status": "pending",
+        "authVersion": 1,
+        "createdAt": now_iso(),
         **role_info,
     }
-    USERS.append(user)
-    return jsonify(public_user(user)), 201
+    insert_user(user)
+    return jsonify({
+        "message": "Registration submitted. A system administrator must approve your account before you can sign in.",
+        "user": public_user(find_user(user["id"])),
+    }), 202
+
+
+@app.patch("/api/admin/users/<user_id>/access")
+def update_user_access(user_id: str):
+    administrator = require_admin()
+    target = find_user(user_id)
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+
+    payload = request.get_json(force=True) or {}
+    status = str(payload.get("status") or target["status"]).strip().lower()
+    if status not in {"pending", "active", "disabled"}:
+        raise ValueError("Status must be pending, active, or disabled")
+    if target["id"] == administrator["id"] and status != "active":
+        raise ValueError("You cannot disable your own administrator account")
+
+    changes = {"status": status, "authVersion": int(target.get("authVersion", 1)) + 1}
+    role_key = str(payload.get("role") or "").strip()
+    if role_key:
+        role_info = REGISTERABLE_ROLES.get(role_key)
+        if not role_info:
+            raise ValueError("Please select a valid role")
+        changes.update(role_info)
+    if status == "active":
+        changes.update({"approvedAt": now_iso(), "approvedBy": administrator["id"]})
+
+    updated = update_user(user_id, **changes)
+    return jsonify(public_user(updated))
 
 
 @app.post("/api/forgot-password")
 def forgot_password():
     payload = request.get_json(force=True)
     email = normalize_username(payload.get("email"))
-    selected_role = str(payload.get("role") or "").strip()
     if "@" not in email:
         raise ValueError("Enter a valid email address")
-    if not selected_role:
-        raise ValueError("Please select your role")
+    generic_response = {"ok": True, "message": "If an active account exists for that email, a password reset link has been sent."}
+    user = find_user_by_email(email)
+    if not user or user.get("status") != "active":
+        return jsonify(generic_response)
 
-    user = next((item for item in USERS if item.get("email") == email), None)
-    if not user:
-        return jsonify({"error": "No account is registered with that email address. Check the email or contact zda23b014@iitmz.ac.in to be added."}), 404
-    if not user_has_role(user, selected_role):
-        return jsonify({"error": "That email is not registered for the selected role. Check your email and role."}), 403
-
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    PASSWORD_RESET_TOKENS[token_hash] = {
-        "userId": user["id"],
-        "expiresAt": datetime.now(timezone.utc) + timedelta(minutes=30),
-    }
+    raw_token = AUTH_SERIALIZER.dumps(
+        {"userId": user["id"], "authVersion": user.get("authVersion", 1)},
+        salt="zanlink-password-reset",
+    )
     try:
         send_password_reset_email(email, f"{APP_URL}/?reset_token={raw_token}")
-    except Exception:
-        PASSWORD_RESET_TOKENS.pop(token_hash, None)
+    except RuntimeError:
         app.logger.exception("Could not send password reset email")
         return jsonify({"error": "Your account was found, but the system could not send the reset email because email delivery is not configured. Contact zda23b014@iitmz.ac.in."}), 503
+    except smtplib.SMTPAuthenticationError:
+        app.logger.exception("SMTP credentials were rejected")
+        return jsonify({"error": "The email account rejected its SMTP credentials. Configure a valid Google App Password and restart the server."}), 503
+    except (smtplib.SMTPException, OSError):
+        app.logger.exception("Could not send password reset email")
+        return jsonify({"error": "The email service is temporarily unavailable. Please try again later."}), 503
 
-    return jsonify({"ok": True, "message": "A password reset link has been sent to your email."})
+    return jsonify(generic_response)
 
 
 @app.post("/api/reset-password")
 def reset_password():
     payload = request.get_json(force=True)
     raw_token = str(payload.get("token") or "")
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    reset = PASSWORD_RESET_TOKENS.get(token_hash)
-    if not reset or reset["expiresAt"] < datetime.now(timezone.utc):
-        PASSWORD_RESET_TOKENS.pop(token_hash, None)
+    try:
+        reset = AUTH_SERIALIZER.loads(raw_token, salt="zanlink-password-reset", max_age=1800)
+    except (BadSignature, SignatureExpired):
         return jsonify({"error": "This reset link is invalid or has expired"}), 400
 
     password = require_password(payload, "newPassword")
     if password != str(payload.get("confirmPassword") or ""):
         raise ValueError("Passwords do not match")
     user = find_user(reset["userId"])
-    user["password"] = password
-    PASSWORD_RESET_TOKENS.pop(token_hash, None)
+    if not user or int(reset.get("authVersion", 0)) != int(user.get("authVersion", 1)):
+        return jsonify({"error": "This reset link is invalid or has expired"}), 400
+    update_user(
+        user["id"],
+        passwordHash=generate_password_hash(password),
+        authVersion=int(user.get("authVersion", 1)) + 1,
+    )
     return jsonify({"ok": True, "message": "Password updated. You can sign in now."})
 
 

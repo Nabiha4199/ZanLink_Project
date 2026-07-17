@@ -1,0 +1,3 @@
+# Install the Flask API dependencies when setup is run from the project root.
+# This includes google-auth, which is used to verify Google sign-in tokens.
+-r server/requirements.txt
