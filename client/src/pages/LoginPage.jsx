@@ -68,6 +68,44 @@ function GoogleSignIn({ onLogin, showError }) {
   return <div className="google-button" ref={buttonRef} />;
 }
 
+function EyeIcon({ hidden }) {
+  return (
+    <svg aria-hidden="true" className="password-eye-icon" viewBox="0 0 24 24">
+      <path d="M2.1 12s3.4-6 9.9-6 9.9 6 9.9 6-3.4 6-9.9 6-9.9-6-9.9-6Z" />
+      <circle cx="12" cy="12" r="3" />
+      {hidden && <path className="password-eye-slash" d="M4 4l16 16" />}
+    </svg>
+  );
+}
+
+function PasswordField({ label, value, onChange, autoComplete, helper }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <label>{label}
+      <span className="password-input-wrap">
+        <input
+          autoComplete={autoComplete}
+          required
+          minLength="8"
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={onChange}
+        />
+        <button
+          aria-label={visible ? "Hide password" : "Show password"}
+          className="password-toggle"
+          type="button"
+          onClick={() => setVisible((current) => !current)}
+        >
+          <EyeIcon hidden={visible} />
+        </button>
+      </span>
+      {helper && <small>{helper}</small>}
+    </label>
+  );
+}
+
 const demoUsers = [
   ["Engineer", "Engineer"],
   ["Sales", "Sales"],
@@ -191,7 +229,7 @@ export default function LoginPage({ onLogin, showError }) {
             </div>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Email<input autoComplete="email" required type="email" value={loginForm.email} onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })} /></label>
-              <label>Password<input autoComplete="current-password" required minLength="8" type="password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} /></label>
+              <PasswordField label="Password" autoComplete="current-password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
               <button className="btn">Sign in</button>
             </form>
             <div className="auth-divider"><span>or</span></div>
@@ -212,8 +250,8 @@ export default function LoginPage({ onLogin, showError }) {
                 {registerRoles.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </label>
-            <label>Password<input autoComplete="new-password" required minLength="8" type="password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} /><small>Use at least 8 characters.</small></label>
-            <label>Confirm password<input autoComplete="new-password" required minLength="8" type="password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} /></label>
+            <PasswordField label="Password" autoComplete="new-password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} helper="Use at least 8 characters." />
+            <PasswordField label="Confirm password" autoComplete="new-password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} />
             <button className="btn">Create account</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>
@@ -238,8 +276,8 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "reset-password" && (
           <form className="login-form" onSubmit={submitResetPassword}>
             <h2>Choose a new password</h2>
-            <label>New password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} /><small>Use at least 8 characters.</small></label>
-            <label>Confirm new password<input autoComplete="new-password" required minLength="8" type="password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} /></label>
+            <PasswordField label="New password" autoComplete="new-password" value={resetForm.newPassword} onChange={(event) => setResetForm({ ...resetForm, newPassword: event.target.value })} helper="Use at least 8 characters." />
+            <PasswordField label="Confirm new password" autoComplete="new-password" value={resetForm.confirmPassword} onChange={(event) => setResetForm({ ...resetForm, confirmPassword: event.target.value })} />
             <button className="btn">Reset password</button>
             <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
           </form>
