@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const defaultGoogleClientId = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com";
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || defaultGoogleClientId;
 
 function loadGoogleIdentity() {
   if (window.google?.accounts?.id) return Promise.resolve(window.google);

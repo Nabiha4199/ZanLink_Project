@@ -31,7 +31,8 @@ from reportlab.platypus import TableStyle
 load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+DEFAULT_GOOGLE_CLIENT_ID = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID).strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
