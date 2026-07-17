@@ -32,7 +32,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
 DEFAULT_GOOGLE_CLIENT_ID = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com"
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID).strip()
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or DEFAULT_GOOGLE_CLIENT_ID).strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -749,7 +749,9 @@ def login():
 
 @app.post("/api/auth/google")
 def google_login():
-    if not GOOGLE_CLIENT_ID or not google_requests or not id_token:
+    if not google_requests or not id_token:
+        return jsonify({"error": "Google sign-in dependency is missing on the server. Run: python -m pip install -r requirements.txt"}), 503
+    if not GOOGLE_CLIENT_ID:
         return jsonify({"error": "Google sign-in is not configured on the server"}), 503
 
     credential = str((request.get_json(force=True) or {}).get("credential") or "")
