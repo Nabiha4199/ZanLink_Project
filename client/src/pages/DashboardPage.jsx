@@ -12,14 +12,14 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
   return (
     <>
       <div className="topbar dashboard-topbar">
-        <div className="page-title"><span className="eyebrow">Employee workspace</span><h1>Welcome back, {user.name}</h1><p>Here&apos;s what needs your attention today.</p></div>
+        <div className="page-title"><span className="eyebrow">Employee workspace</span><h1>Welcome, {user.name}</h1><p>Here&apos;s what needs your attention today.</p></div>
         <div className="toolbar">
           {canCreate(user) && <button className="btn" onClick={onCreateDoc1}>New Onboarding</button>}
           {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
         </div>
       </div>
-      <section className="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
-      <section className="panel filters">
+      <section className="stats" data-tour="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
+      <section className="panel filters" data-tour="documents">
         <div className="filter-heading"><div><strong>Documents</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
         <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">Maintenance</option></select>

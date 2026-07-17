@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Field from "./components/common/Field";
+import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
 import { emptyItem, engineerStockItems, serviceTypes } from "./config/workflow";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
@@ -19,6 +20,7 @@ function App() {
   const [reports, setReports] = useState(null);
   const [filters, setFilters] = useState({ q: "", type: "", status: "", department: "" });
   const [message, setMessage] = useState("");
+  const [tourOpen, setTourOpen] = useState(false);
 
   const selected = documents.find((doc) => doc.id === selectedId);
 
@@ -40,6 +42,22 @@ function App() {
       refresh().catch(showError);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const tourKey = `zanlink-tour-complete-${user.email || user.id}`;
+    if (!localStorage.getItem(tourKey)) setTourOpen(true);
+  }, [user]);
+
+  function closeTour() {
+    localStorage.setItem(`zanlink-tour-complete-${user.email || user.id}`, "true");
+    setTourOpen(false);
+  }
+
+  function startTour() {
+    navigate("dashboard");
+    setTourOpen(true);
+  }
 
   function showError(error) {
     setMessage(error.message || String(error));
@@ -70,7 +88,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar user={user} view={view} onNavigate={navigate} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
+      <Sidebar user={user} view={view} onNavigate={navigate} onStartTour={startTour} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
       <main className="main">
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
@@ -98,6 +116,7 @@ function App() {
         )}
       </main>
       {message && <div className="toast">{message}</div>}
+      <GuidedTour open={tourOpen} onClose={closeTour} />
     </div>
   );
 }
