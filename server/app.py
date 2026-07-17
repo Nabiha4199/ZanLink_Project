@@ -14,8 +14,12 @@ from flask import Flask, jsonify, request
 from flask import send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
+try:
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+except ModuleNotFoundError:
+    google_requests = None
+    id_token = None
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -742,7 +746,7 @@ def login():
 
 @app.post("/api/auth/google")
 def google_login():
-    if not GOOGLE_CLIENT_ID:
+    if not GOOGLE_CLIENT_ID or not google_requests or not id_token:
         return jsonify({"error": "Google sign-in is not configured on the server"}), 503
 
     credential = str((request.get_json(force=True) or {}).get("credential") or "")
