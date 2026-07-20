@@ -651,6 +651,11 @@ textarea {
   background: #eee5f8;
 }
 
+.dashboard-stats .stat,
+.report-stats .stat {
+  background: #c7e5f1;
+}
+
 .stat b {
   display: block;
   margin-top: auto;

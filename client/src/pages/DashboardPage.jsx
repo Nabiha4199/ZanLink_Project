@@ -18,7 +18,7 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
           {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
         </div>
       </div>
-      <section className="stats" data-tour="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
+      <section className="stats dashboard-stats" data-tour="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
       <section className="panel filters" data-tour="documents">
         <div className="filter-heading"><div><strong>Documents</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
