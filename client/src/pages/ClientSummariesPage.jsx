@@ -1,7 +1,7 @@
 import React from "react";
 import Field from "../components/common/Field";
 import { api } from "../services/api";
-import { formatDate, usd } from "../utils/formatters";
+import { formatDate, money } from "../utils/formatters";
 
 export default function ClientSummariesPage({ user, summaries, documents, showError }) {
   if (!summaries.length) return <div className="panel empty">No client summaries generated yet.</div>;
@@ -20,6 +20,7 @@ function ClientSummary({ user, summary, doc, showError }) {
   const subtotal = items.reduce((total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0), 0);
   const transportCost = Number(summary.transportCost || 0);
   const grandTotal = subtotal + transportCost;
+  const currency = summary.currency || doc?.accounts?.currency || "TZS";
 
   async function download() {
     try {
@@ -68,7 +69,7 @@ function ClientSummary({ user, summary, doc, showError }) {
         <Field label="Location" value={summary.customerLocation || doc?.location} />
         <Field label="Date" value={formatDate(summary.createdAt)} />
         <Field label="Invoice Number" value={summary.invoiceNumber || doc?.accounts?.invoiceNumber} />
-        <Field label="Accounts Billing Amount" value={usd(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0)} />
+        <Field label="Accounts Billing Amount" value={money(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0, currency)} />
         <Field label="Contact" value={summary.customerContact || doc?.contact} />
       </div>
       <h3>Equipment/Accessories delivered</h3>
@@ -83,13 +84,13 @@ function ClientSummary({ user, summary, doc, showError }) {
                 <td>{item.name || "-"}</td>
                 <td>{Number(item.issuedQty || 0)}</td>
                 <td>{item.purpose || "Sold to Client"}</td>
-                <td>{usd(Number(item.unitCost || 0))}</td>
-                <td>{usd(Number(item.issuedQty || 0) * Number(item.unitCost || 0))}</td>
+                <td>{money(Number(item.unitCost || 0), currency)}</td>
+                <td>{money(Number(item.issuedQty || 0) * Number(item.unitCost || 0), currency)}</td>
               </tr>
             ))}
-            <tr><td colSpan="6"><strong>Sub Total:</strong></td><td>{usd(subtotal)}</td></tr>
-            <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{usd(transportCost)}</td></tr>
-            <tr><td colSpan="6"><strong>Grand Total Cost:</strong></td><td>{usd(grandTotal)}</td></tr>
+            <tr><td colSpan="6"><strong>Sub Total:</strong></td><td>{money(subtotal, currency)}</td></tr>
+            <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{money(transportCost, currency)}</td></tr>
+            <tr><td colSpan="6"><strong>Grand Total Cost:</strong></td><td>{money(grandTotal, currency)}</td></tr>
           </tbody>
         </table>
       </div>

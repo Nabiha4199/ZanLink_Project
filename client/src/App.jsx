@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
-import { emptyItem, engineerStockItems, serviceTypes } from "./config/workflow";
+import { currencies, emptyItem, engineerStockItems, requestedServices, serviceTypes } from "./config/workflow";
+import ClientsPage from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -17,6 +18,7 @@ function App() {
   const [documents, setDocuments] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [summaries, setSummaries] = useState([]);
+  const [clients, setClients] = useState([]);
   const [reports, setReports] = useState(null);
   const [filters, setFilters] = useState({ q: "", type: "", status: "", department: "" });
   const [message, setMessage] = useState("");
@@ -26,14 +28,16 @@ function App() {
 
   async function refresh(nextFilters = filters) {
     if (!user) return;
-    const [docs, summaryData, reportData] = await Promise.all([
+    const [docs, summaryData, reportData, clientData] = await Promise.all([
       api.documents(user, nextFilters),
       api.summaries(user),
       api.reports(user),
+      api.clients(user),
     ]);
     setDocuments(docs);
     setSummaries(summaryData);
     setReports(reportData);
+    setClients(clientData);
   }
 
   useEffect(() => {
@@ -93,6 +97,18 @@ function App() {
     }
   }
 
+  async function registerClient(payload) {
+    try {
+      await api.createClient(user, payload);
+      await refresh();
+      setMessage("Client registered.");
+      setTimeout(() => setMessage(""), 2600);
+    } catch (error) {
+      showError(error);
+      throw error;
+    }
+  }
+
   if (!user) return (
     <LoginPage onLogin={setUser} showError={showError} />
   );
@@ -105,9 +121,11 @@ function App() {
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
         ) : view === "doc1" ? (
-          <Doc1Form onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
+          <Doc1Form clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
         ) : view === "maintenance" ? (
-          <MaintenanceForm onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
+          <MaintenanceForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
+        ) : view === "clients" ? (
+          <ClientsPage clients={clients} onRegister={registerClient} />
         ) : view === "summaries" ? (
           <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
@@ -172,15 +190,13 @@ function PasswordSetupCard({ onSubmit }) {
   );
 }
 
-function Doc1Form({ onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientName: "", contact: "", location: "", service: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
+function Doc1Form({ clients, onSubmit, onCancel }) {
+  const [form, setForm] = useState({ clientId: "", clientName: "", contact: "", email: "", location: "", service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New Document 1" subtitle="Customer onboarding and stock requisition starts from Engineer." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Sales">
       <div className="form-grid">
-        {textInput("Client Name", "clientName", form, setForm)}
-        {textInput("Contact", "contact", form, setForm)}
-        {textInput("Location", "location", form, setForm)}
-        {textInput("Requested Service", "service", form, setForm)}
+        <ClientFields clients={clients} form={form} setForm={setForm} />
+        <ServiceSelect form={form} setForm={setForm} label="Requested Service" />
         <label className="wide">Onboarding Type
           <div className="segmented-control">
             {serviceTypes.map(([value, label]) => (
@@ -202,15 +218,13 @@ function Doc1Form({ onSubmit, onCancel }) {
   );
 }
 
-function MaintenanceForm({ onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientName: "", contact: "", location: "", service: "", fault: "", action: "", items: [{ ...emptyItem }] });
+function MaintenanceForm({ clients, onSubmit, onCancel }) {
+  const [form, setForm] = useState({ clientId: "", clientName: "", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New Maintenance Request" subtitle="Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
       <div className="form-grid">
-        {textInput("Client Name", "clientName", form, setForm)}
-        {textInput("Contact", "contact", form, setForm)}
-        {textInput("Location", "location", form, setForm)}
-        {textInput("Service", "service", form, setForm)}
+        <ClientFields clients={clients} form={form} setForm={setForm} />
+        <ServiceSelect form={form} setForm={setForm} label="Service" />
         <label className="wide">Fault Report<textarea required value={form.fault} onChange={(event) => setForm({ ...form, fault: event.target.value })} /></label>
         <label className="wide">Recommended Action<textarea required value={form.action} onChange={(event) => setForm({ ...form, action: event.target.value })} /></label>
       </div>
@@ -374,10 +388,10 @@ function OnboardingPreview({ doc }) {
       <div className="paper-fields">
         <Field label="Client Name" value={doc.clientName} />
         <Field label="Location" value={doc.location} />
-        <Field label="Installation Cost" value={money(doc.sales?.amount)} />
-        <Field label="Equipment Cost" value={money(doc.sales?.packageCost)} />
+        <Field label="Installation Cost" value={money(doc.sales?.amount, doc.sales?.currency)} />
+        <Field label="Equipment Cost" value={money(doc.sales?.packageCost, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Subscription package" value={doc.sales?.subscription || doc.sales?.remarks || doc.service} />
-        <Field label="MBR" value={money(doc.sales?.mbr || doc.accounts?.billingAmount)} />
+        <Field label="MBR" value={money(doc.sales?.mbr || doc.accounts?.billingAmount, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
         <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
       </div>
@@ -443,8 +457,10 @@ function Doc1Actions({ user, doc, run }) {
     mbr: doc.sales?.mbr || doc.accounts?.billingAmount || "",
     requestedBy: doc.sales?.requestedBy || user.name || "",
     requestedDate: doc.sales?.requestedDate || new Date().toISOString().slice(0, 10),
+    requestedTime: doc.sales?.requestedTime || new Date().toTimeString().slice(0, 5),
+    currency: doc.sales?.currency || "TZS",
   });
-  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
+  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
   const engineerEquipment = doc.store?.items || [];
   const [accountEquipment, setAccountEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
@@ -459,29 +475,31 @@ function Doc1Actions({ user, doc, run }) {
       <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, sales), "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
-          {textInput("Client Name", "clientName", sales, setSales, !salesOpen)}
-          {textInput("Location", "location", sales, setSales, !salesOpen)}
+          {textInput("Client Name", "clientName", sales, setSales, true)}
+          {textInput("Location", "location", sales, setSales, true)}
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
+          <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
           {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
           {numberInput("Total Equipment Cost", "packageCost", sales, setSales, !salesOpen)}
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
           {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
           {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
-          <label>Date<input type="date" disabled={!salesOpen} required value={sales.requestedDate} onChange={(event) => setSales({ ...sales, requestedDate: event.target.value })} /></label>
+          <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
+          <label>Time<input type="time" readOnly value={sales.requestedTime} /></label>
         </div>
       </ActionPanel>
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, { ...accounts, equipment: accountEquipment }), "Moved to Store.")}>
-            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
-            <EquipmentCostEditor items={accountEquipment} setItems={setAccountEquipment} locked={!accountsOpen} />
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+            <EquipmentCostEditor items={accountEquipment} setItems={setAccountEquipment} locked={!accountsOpen} currency={accounts.billInUsd ? "USD" : (sales.currency || "TZS")} />
           </ActionPanel>
           {!accountsOnly && (
             <>
               <ActionPanel title="Store Section" enabled={storeOpen} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
-                {!storeManager && <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>}
+                {!storeManager && <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>}
               </ActionPanel>
               {!storeManager && (
                 <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
@@ -501,7 +519,7 @@ function MaintenanceActions({ user, doc, run }) {
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const accountsOnly = user.role === "Accounts";
   const [hodRemarks, setHodRemarks] = useState(doc.hod?.remarks || "");
-  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
+  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
   return (
     <>
       <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
@@ -511,7 +529,7 @@ function MaintenanceActions({ user, doc, run }) {
         </ActionPanel>
       )}
       <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Maintenance completed.")}>
-        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
       </ActionPanel>
     </>
   );
@@ -527,7 +545,7 @@ function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
   );
 }
 
-function EquipmentCostEditor({ items, setItems, locked = false }) {
+function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS" }) {
   function update(index, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
   }
@@ -539,7 +557,7 @@ function EquipmentCostEditor({ items, setItems, locked = false }) {
         <div className="item-row" key={index}>
           <label>Item<input disabled value={item.name || ""} readOnly /></label>
           <label>Req. Qty<span className="readonly-value">{item.requestedQty || 1}</span></label>
-          <label>Unit Cost<input required min="0" type="number" disabled={locked} value={item.unitCost || ""} onChange={(event) => update(index, event.target.value)} /></label>
+          <label>Unit Cost ({currency})<input required min="0" type="number" disabled={locked} value={item.unitCost || ""} onChange={(event) => update(index, event.target.value)} /></label>
         </div>
       ))}
     </div>
@@ -629,6 +647,7 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
 function EngineerItemEditor({ items, setItems }) {
   const pageSize = 5;
   const [page, setPage] = useState(0);
+  const [stockSearch, setStockSearch] = useState("");
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const startIndex = page * pageSize;
   const visibleItems = items.slice(startIndex, startIndex + pageSize);
@@ -646,9 +665,16 @@ function EngineerItemEditor({ items, setItems }) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, requestedQty: Number(value) } : item));
   }
 
+  const matchingStockItems = engineerStockItems.filter((stockItem) =>
+    `${stockItem.id} ${stockItem.description}`.toLowerCase().includes(stockSearch.toLowerCase())
+  );
+
   return (
     <div className="items-list">
       <div className="section-title"><h2>Stock Items</h2></div>
+      <label className="equipment-search">Search Equipment
+        <input placeholder="Search by item ID or description" value={stockSearch} onChange={(event) => setStockSearch(event.target.value)} />
+      </label>
       <div className="table-wrap engineer-items-table">
         <table>
           <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Action</th></tr></thead>
@@ -659,7 +685,7 @@ function EngineerItemEditor({ items, setItems }) {
                 <tr key={itemIndex}>
                   <td>{itemIndex + 1}</td>
                   <td><span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span></td>
-                  <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{engineerStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}</select></td>
+                  <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{matchingStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}{item.name && !matchingStockItems.some((stockItem) => stockItem.description === item.name) && <option value={item.name}>{item.name}</option>}</select></td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
                 </tr>
@@ -682,6 +708,57 @@ function EngineerItemEditor({ items, setItems }) {
 
 function History({ doc }) {
   return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{item.note}</small></div></div>)}</div></section>;
+}
+
+function ClientFields({ clients, form, setForm }) {
+  const selectedClient = clients.find((client) => client.id === form.clientId);
+
+  function selectClient(clientId) {
+    const client = clients.find((item) => item.id === clientId);
+    setForm({
+      ...form,
+      clientId,
+      clientName: client?.name || "",
+      contact: client?.contact || "",
+      email: client?.email || "",
+      location: client?.locations?.[0] || "",
+    });
+  }
+
+  return (
+    <>
+      <label>Client
+        <select required value={form.clientId} onChange={(event) => selectClient(event.target.value)}>
+          <option value="">Select a registered client</option>
+          {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+        </select>
+        {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
+      </label>
+      <label>Location
+        <select required disabled={!selectedClient} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
+          <option value="">Select location</option>
+          {(selectedClient?.locations || []).map((location) => <option key={location}>{location}</option>)}
+        </select>
+      </label>
+      <label>Contact<input readOnly value={form.contact} /></label>
+      <label>Email<input readOnly value={form.email} /></label>
+    </>
+  );
+}
+
+function ServiceSelect({ form, setForm, label }) {
+  return (
+    <>
+      <label>{label}
+        <select required value={form.service} onChange={(event) => setForm({ ...form, service: event.target.value, otherService: event.target.value === "Other" ? form.otherService : "" })}>
+          <option value="">Select service</option>
+          {requestedServices.map((service) => <option key={service}>{service}</option>)}
+          <option>Other</option>
+        </select>
+      </label>
+      {form.service === "Other" && <label>Other Service<input required value={form.otherService} onChange={(event) => setForm({ ...form, otherService: event.target.value })} /></label>}
+    </>
+  );
 }
 
 function textInput(label, key, form, setForm, disabled = false) {

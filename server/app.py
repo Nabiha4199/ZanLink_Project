@@ -67,17 +67,27 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def money_text(value: float | int | str | None, currency: str = "TZS") -> str:
+    amount = float(value or 0)
+    return f"${amount:,.2f}" if currency == "USD" else f"TZS {amount:,.0f}"
+
+
 def history(user_id: str, action: str, note: str = "") -> dict:
     return {"id": str(uuid4()), "at": now_iso(), "userId": user_id, "action": action, "note": note}
 
 
 STATE = {
     "counters": {"doc1": 2, "maintenance": 2, "summary": 1},
+    "clients": [
+        {"id": "c1", "name": "Stone Town Hotel", "contact": "+255 777 100 400", "email": "info@stonetownhotel.example", "locations": ["Zanzibar"], "createdAt": now_iso()},
+        {"id": "c2", "name": "Airport Office", "contact": "+255 777 222 111", "email": "office@airport.example", "locations": ["Abeid Amani Karume Airport"], "createdAt": now_iso()},
+    ],
     "documents": [
         {
             "id": "d1",
             "type": "doc1",
             "number": "REQ-000001",
+            "clientId": "c1",
             "clientName": "Stone Town Hotel",
             "contact": "+255 777 100 400",
             "service": "Dedicated internet onboarding",
@@ -110,6 +120,7 @@ STATE = {
             "id": "m1",
             "type": "maintenance",
             "number": "MNT-000001",
+            "clientId": "c2",
             "clientName": "Airport Office",
             "contact": "+255 777 222 111",
             "service": "Link maintenance",
@@ -231,6 +242,25 @@ def find_document(document_id: str) -> dict | None:
     return next((doc for doc in STATE["documents"] if doc["id"] == document_id), None)
 
 
+def find_client(client_id: str | None) -> dict | None:
+    return next((client for client in STATE["clients"] if client["id"] == client_id), None)
+
+
+def registered_client_details(payload: dict) -> tuple[dict, str]:
+    client = find_client(str(payload.get("clientId") or ""))
+    if not client:
+        raise ValueError("Select a registered client")
+    location = require_text(payload, "location", "Location")
+    if location not in client.get("locations", []):
+        raise ValueError("Select one of the client's registered locations")
+    return client, location
+
+
+def requested_service(payload: dict) -> str:
+    service = require_text(payload, "service", "Requested service")
+    return require_text(payload, "otherService", "Other service") if service == "Other" else service
+
+
 def find_summary(summary_id: str) -> dict | None:
     return next((summary for summary in STATE["summaries"] if summary["id"] == summary_id), None)
 
@@ -320,6 +350,7 @@ def validate_items(items: list, *, require_issued: bool = False, require_cost: b
                 "serialNumber": optional_text(item, "serialNumber", max_length=120),
                 "purpose": optional_text(item, "purpose", default="Sold to Client", max_length=180),
                 "unitCost": unit_cost,
+                "costCurrency": optional_text(item, "costCurrency", default="TZS", max_length=3) or "TZS",
             }
         )
     return cleaned
@@ -350,6 +381,7 @@ def generate_summary(doc: dict) -> dict:
         "service": doc.get("service", ""),
         "invoiceNumber": doc.get("accounts", {}).get("invoiceNumber", ""),
         "billingAmount": float(doc.get("accounts", {}).get("billingAmount") or 0),
+        "currency": doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS",
         "items": items,
         "subtotal": subtotal,
         "transportCost": 0,
@@ -364,25 +396,11 @@ def generate_summary(doc: dict) -> dict:
 
 
 def visible_documents_for(user: dict) -> list[dict]:
-    if user["role"] == "System Admin":
-        return STATE["documents"]
-    if user["role"] == "Management" or user["department"] == "Management":
-        return [doc for doc in STATE["documents"] if doc.get("workflowCompletedAt") or (doc.get("type") == "doc1" and doc.get("status") == "Completed")]
-    return [
-        doc
-        for doc in STATE["documents"]
-        if doc["createdBy"] == user["id"] or doc["currentDepartment"] == user["department"] or doc["status"] == "Completed"
-    ]
+    return STATE["documents"]
 
 
 def ensure_document_access(user: dict, doc: dict) -> None:
-    if user["role"] == "System Admin":
-        return
-    if (user["role"] == "Management" or user["department"] == "Management") and (doc.get("workflowCompletedAt") or (doc.get("type") == "doc1" and doc.get("status") == "Completed")):
-        return
-    if doc["createdBy"] == user["id"] or doc["currentDepartment"] == user["department"] or doc["status"] == "Completed":
-        return
-    raise PermissionError("This document is not visible to your role")
+    return
 
 
 def require_completed_doc1(user: dict, document_id: str) -> dict:
@@ -454,12 +472,15 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     draw_checkbox(pdf, "New Installation", selected_type == "new_installation", 22 * mm, y + 22)
     draw_checkbox(pdf, "Reconnection", selected_type == "reconnection", 62 * mm, y + 22)
     draw_checkbox(pdf, "WiFi Extension", selected_type == "wifi_extension", 98 * mm, y + 22)
+    draw_checkbox(pdf, "Shifting Connection", selected_type == "shifting_connection", 132 * mm, y + 22)
+    draw_checkbox(pdf, "General Maintenance", selected_type == "general_maintenance", 22 * mm, y + 34)
     draw_label_value(pdf, "Client Name", doc["clientName"], 22 * mm, y, 56 * mm)
     draw_label_value(pdf, "Location", doc["location"], 85 * mm, y, 52 * mm)
     draw_label_value(pdf, "Service", doc["service"], 143 * mm, y, 45 * mm)
     draw_label_value(pdf, "Contact", doc["contact"], 22 * mm, y - 18 * mm, 56 * mm)
-    draw_label_value(pdf, "Installation Cost", f"{doc.get('sales', {}).get('amount', '-')}", 85 * mm, y - 18 * mm, 52 * mm)
-    draw_label_value(pdf, "MBR", f"{doc.get('sales', {}).get('mbr', doc.get('accounts', {}).get('billingAmount', '-'))}", 143 * mm, y - 18 * mm, 45 * mm)
+    currency = doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS"
+    draw_label_value(pdf, "Installation Cost", money_text(doc.get("sales", {}).get("amount"), doc.get("sales", {}).get("currency") or "TZS"), 85 * mm, y - 18 * mm, 52 * mm)
+    draw_label_value(pdf, "MBR", money_text(doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount")), currency), 143 * mm, y - 18 * mm, 45 * mm)
     draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
     draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
 
@@ -577,11 +598,12 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
     pdf.drawRightString(width - 22 * mm, height - 28 * mm, "Tel: +255 777 476 666")
     pdf.drawRightString(width - 22 * mm, height - 32 * mm, "E-Mail: info-zanlink@liquidtelecom.co.tz")
 
+    currency = summary.get("currency") or (doc or {}).get("accounts", {}).get("currency") or "TZS"
     info_rows = [
         ["Sheet No.", summary["number"], "Source Document", summary.get("sourceDocumentNumber") or (doc or {}).get("number", "")],
         ["Customer", summary.get("customerName") or (doc or {}).get("clientName", ""), "Location", summary.get("customerLocation") or (doc or {}).get("location", "")],
         ["Date", datetime.fromisoformat(summary["createdAt"]).strftime("%d/%m/%Y") if summary.get("createdAt") else datetime.now().strftime("%d/%m/%Y"), "Invoice Number", summary.get("invoiceNumber", "")],
-        ["Billing Amount", f"${float(summary.get('billingAmount') or 0):,.2f}", "Contact", summary.get("customerContact") or (doc or {}).get("contact", "")],
+        ["Billing Amount", money_text(summary.get("billingAmount"), currency), "Contact", summary.get("customerContact") or (doc or {}).get("contact", "")],
     ]
     info_table = Table(info_rows, colWidths=[28 * mm, 61 * mm, 28 * mm, 61 * mm])
     info_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.black), ("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold")]))
@@ -602,15 +624,15 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
                 item.get("name", ""),
                 f"{qty:g}",
                 item.get("purpose") or "Sold to Client",
-                f"${cost:,.2f}",
-                f"${qty * cost:,.2f}",
+                money_text(cost, currency),
+                money_text(qty * cost, currency),
             ]
         )
     rows.extend(
         [
-            ["", "", "", "", "", "Sub Total:", f"${float(summary.get('subtotal') or 0):,.2f}"],
-            ["", "", "", "", "", "Transportation Cost:", f"${float(summary.get('transportCost') or 0):,.2f}"],
-            ["", "", "", "", "", "Grand Total Cost:", f"${float(summary.get('grandTotal') or 0):,.2f}"],
+            ["", "", "", "", "", "Sub Total:", money_text(summary.get("subtotal"), currency)],
+            ["", "", "", "", "", "Transportation Cost:", money_text(summary.get("transportCost"), currency)],
+            ["", "", "", "", "", "Grand Total Cost:", money_text(summary.get("grandTotal"), currency)],
         ]
     )
     table = Table(rows, colWidths=[9 * mm, 25 * mm, 52 * mm, 13 * mm, 31 * mm, 25 * mm, 28 * mm])
@@ -755,6 +777,39 @@ def health():
 @app.get("/api/users")
 def users():
     return jsonify([public_user(user) for user in USERS])
+
+
+@app.get("/api/clients")
+def clients():
+    current_user()
+    return jsonify(deepcopy(STATE["clients"]))
+
+
+@app.post("/api/clients")
+def create_client():
+    current_user()
+    payload = request.get_json(force=True)
+    locations = payload.get("locations")
+    if not isinstance(locations, list):
+        raise ValueError("Locations must be a list")
+    cleaned_locations = list(dict.fromkeys(str(location).strip() for location in locations if str(location).strip()))
+    if not cleaned_locations:
+        raise ValueError("Add at least one client location")
+    if any(len(location) > 180 for location in cleaned_locations):
+        raise ValueError("Each location must be 180 characters or fewer")
+    email = normalize_email(payload.get("email"))
+    if any(client.get("email", "").lower() == email for client in STATE["clients"]):
+        raise ValueError("A client with this email is already registered")
+    client = {
+        "id": f"c-{uuid4()}",
+        "name": require_text(payload, "name", "Client name"),
+        "contact": require_text(payload, "contact", "Contact number"),
+        "email": email,
+        "locations": cleaned_locations,
+        "createdAt": now_iso(),
+    }
+    STATE["clients"].insert(0, client)
+    return jsonify(client), 201
 
 
 @app.post("/api/login")
@@ -949,18 +1004,21 @@ def create_doc1():
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
     service_type = payload.get("serviceType", "new_installation")
-    if service_type not in {"new_installation", "reconnection", "wifi_extension"}:
-        raise ValueError("Onboarding type must be New Installation, Reconnection, or WiFi Extension")
+    if service_type not in {"new_installation", "reconnection", "wifi_extension", "shifting_connection", "general_maintenance"}:
+        raise ValueError("Please select a valid onboarding type")
+    client, location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Stock item")
     doc = {
         "id": str(uuid4()),
         "type": "doc1",
         "number": next_number("doc1"),
-        "clientName": require_text(payload, "clientName", "Client name"),
-        "contact": require_text(payload, "contact", "Contact"),
-        "service": require_text(payload, "service", "Requested service"),
+        "clientId": client["id"],
+        "clientName": client["name"],
+        "contact": client["contact"],
+        "email": client["email"],
+        "service": requested_service(payload),
         "serviceType": service_type,
-        "location": require_text(payload, "location", "Location"),
+        "location": location,
         "status": "Pending Sales",
         "currentDepartment": "Sales",
         "createdBy": user["id"],
@@ -982,15 +1040,18 @@ def create_maintenance():
     user = current_user()
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
+    client, location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Maintenance material")
     doc = {
         "id": str(uuid4()),
         "type": "maintenance",
         "number": next_number("maintenance"),
-        "clientName": require_text(payload, "clientName", "Client/site name"),
-        "contact": require_text(payload, "contact", "Contact"),
-        "service": require_text(payload, "service", "Service"),
-        "location": require_text(payload, "location", "Location"),
+        "clientId": client["id"],
+        "clientName": client["name"],
+        "contact": client["contact"],
+        "email": client["email"],
+        "service": requested_service(payload),
+        "location": location,
         "status": "Pending HOD",
         "currentDepartment": "HOD",
         "createdBy": user["id"],
@@ -1018,6 +1079,10 @@ def sales_submit(document_id: str):
     location = require_text(payload, "location", "Location")
     subscription = require_text(payload, "subscription", "Subscription")
     equipment = deepcopy(doc.get("store", {}).get("items", []))
+    currency = str(payload.get("currency") or "TZS").upper()
+    if currency not in {"TZS", "USD"}:
+        raise ValueError("Money type must be TZS or USD")
+    submitted_at = datetime.now(timezone.utc)
     doc["clientName"] = client_name
     doc["location"] = location
     doc["sales"] = {
@@ -1030,7 +1095,9 @@ def sales_submit(document_id: str):
         "subscription": subscription,
         "mbr": require_number(payload, "mbr", "MBR", minimum=0),
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
-        "requestedDate": require_text(payload, "requestedDate", "Date", max_length=20),
+        "requestedDate": submitted_at.date().isoformat(),
+        "requestedTime": submitted_at.strftime("%H:%M"),
+        "currency": currency,
         "equipment": equipment,
         "remarks": subscription,
     }
@@ -1056,6 +1123,8 @@ def accounts_submit(document_id: str):
         "billingAmount": require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=doc["type"] == "maintenance"),
         "invoiceNumber": require_text(payload, "invoiceNumber", "Invoice number"),
         "remarks": optional_text(payload, "remarks"),
+        "billInUsd": bool(payload.get("billInUsd")),
+        "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
     }
     if doc["type"] == "maintenance":
         set_route(doc, "Completed", "Engineer")
@@ -1071,6 +1140,7 @@ def accounts_submit(document_id: str):
             if account_item["name"] != store_item.get("name") or float(account_item["requestedQty"]) != float(store_item.get("requestedQty") or 0):
                 raise ValueError(f"Account equipment {index} must match the original request")
             store_item["unitCost"] = account_item["unitCost"]
+            store_item["costCurrency"] = doc["accounts"]["currency"]
         doc["store"]["items"] = store_items
         doc.setdefault("sales", {})["equipment"] = deepcopy(store_items)
         doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in store_items)

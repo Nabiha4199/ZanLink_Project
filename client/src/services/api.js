@@ -25,6 +25,8 @@ export const api = {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
     return request(`/api/documents?${params.toString()}`, {}, user);
   },
+  clients: (user) => request("/api/clients", {}, user),
+  createClient: (user, payload) => request("/api/clients", { method: "POST", body: JSON.stringify(payload) }, user),
   createDoc1: (user, payload) => request("/api/documents/doc1", { method: "POST", body: JSON.stringify(payload) }, user),
   createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, user),
   sales: (user, id, payload) => request(`/api/documents/${id}/sales`, { method: "POST", body: JSON.stringify(payload) }, user),

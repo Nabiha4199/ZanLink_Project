@@ -204,6 +204,115 @@
   color: white;
 }
 
+.checkbox-field {
+  align-self: end;
+  min-height: 46px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+.checkbox-field input {
+  width: 19px;
+  min-height: 19px;
+  accent-color: var(--brand);
+}
+
+.equipment-search {
+  max-width: 440px;
+  margin-bottom: 14px;
+}
+
+.field-help {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.client-filters {
+  grid-template-columns: 1fr;
+}
+
+.location-picker {
+  position: relative;
+}
+
+.location-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px;
+}
+
+.location-suggestions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.location-suggestions > strong {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.location-suggestions button {
+  padding: 9px 10px;
+  border: 1px solid #dbe4ea;
+  border-radius: 9px;
+  background: white;
+  text-align: left;
+}
+
+.location-suggestions button:hover {
+  border-color: var(--brand);
+  background: #edf7fc;
+}
+
+.location-suggestions span,
+.location-suggestions small {
+  display: block;
+}
+
+.location-suggestions small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.location-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.location-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #dceff7;
+  color: var(--brand-strong);
+  font-weight: 800;
+}
+
+.location-chips button {
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+}
+
+@media (max-width: 720px) {
+  .location-suggestions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .store-equipment-table,
 .stock-items-table {
   min-width: 600px;

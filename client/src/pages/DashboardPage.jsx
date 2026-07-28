@@ -39,7 +39,6 @@ function DocumentTable({ user, documents, onOpen }) {
         <thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Current Department</th><th>Action</th></tr></thead>
         <tbody>
           {documents.map((doc) => {
-            const engineerTracking = user.role === "Engineer" && !["Draft", "Completed"].includes(doc.status);
             return (
               <React.Fragment key={doc.id}>
                 <tr>
@@ -48,9 +47,9 @@ function DocumentTable({ user, documents, onOpen }) {
                   <td>{doc.clientName}<br /><small>{doc.location}</small></td>
                   <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
                   <td>{doc.currentDepartment}</td>
-                  <td>{!engineerTracking && <button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button>}</td>
+                  <td><button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button></td>
                 </tr>
-                {engineerTracking && <tr><td colSpan="6"><WorkflowTracker type={doc.type} status={doc.status} /></td></tr>}
+                <tr><td colSpan="6"><WorkflowTracker type={doc.type} status={doc.status} /></td></tr>
               </React.Fragment>
             );
           })}
