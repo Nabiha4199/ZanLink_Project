@@ -13,13 +13,18 @@ export default function ClientsPage({ clients, onRegister }) {
       .includes(search.toLowerCase())
   );
 
+  const pendingLocation = locationQuery.trim();
+  const locationsToSubmit = pendingLocation && !form.locations.some((location) => location.toLowerCase() === pendingLocation.toLowerCase())
+    ? [...form.locations, pendingLocation]
+    : form.locations;
+
   function submit(event) {
     event.preventDefault();
     onRegister({
       name: form.name,
       contact: form.contact,
       email: form.email,
-      locations: form.locations,
+      locations: locationsToSubmit,
     }).then(() => {
       setForm(emptyClient);
       setLocationQuery("");
@@ -39,7 +44,7 @@ export default function ClientsPage({ clients, onRegister }) {
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
           <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} />
         </div>
-        <div className="button-row"><button className="btn" disabled={!form.locations.length}>Register Client</button></div>
+        <div className="button-row"><button className="btn" disabled={!locationsToSubmit.length}>Register Client</button></div>
       </form>
       <section className="panel filters client-filters">
         <div className="filter-heading"><div><strong>Registered Clients</strong><span>{clients.length} client(s)</span></div></div>

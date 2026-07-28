@@ -64,6 +64,13 @@ function App() {
   }
 
   function showError(error) {
+    if ((error.message || String(error)).includes("Missing or invalid X-User-Id")) {
+      localStorage.removeItem("zanlink-user");
+      setUser(null);
+      setMessage("Your session expired. Please sign in again.");
+      setTimeout(() => setMessage(""), 3200);
+      return;
+    }
     setMessage(error.message || String(error));
     setTimeout(() => setMessage(""), 3200);
   }
@@ -245,6 +252,24 @@ function FormShell({ title, subtitle, children, submitLabel, onSubmit, onCancel 
   );
 }
 
+function printElementById(printId) {
+  const target = document.getElementById(printId);
+  if (!target) return;
+  const cleanup = () => {
+    target.classList.remove("print-target");
+    document.body.classList.remove("printing-document");
+  };
+  document.body.classList.add("printing-document");
+  target.classList.add("print-target");
+  window.addEventListener("afterprint", cleanup, { once: true });
+  try {
+    window.print();
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+
 function DocumentDetail({ user, doc, onBack, run }) {
   const managementReview = doc.type === "doc1" && (user.role === "Management" || user.department === "Management");
   const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || doc.workflowCompletedAt) && (user.role === "Engineer" || user.role === "System Admin");
@@ -284,6 +309,7 @@ function ManagementReview({ user, doc, run }) {
 }
 
 function MaintenanceCertificate({ user, doc }) {
+  const printId = `maintenance-certificate-${doc.id}`;
   async function download() {
     const blob = await api.downloadDocument(user, doc.id, "maintenance-certificate");
     const url = URL.createObjectURL(blob);
@@ -305,40 +331,17 @@ function MaintenanceCertificate({ user, doc }) {
         </div>
         <div className="button-row">
           <button className="btn" onClick={download}>Download Certificate PDF</button>
-          <button className="btn secondary" onClick={() => window.print()}>Print This Page</button>
+          <button className="btn secondary" onClick={() => printElementById(printId)}>Print Maintenance Doc</button>
         </div>
       </div>
-      <article className="paper-form certificate-form">
-        <div className="certificate-logo">zanlink</div>
-        <div className="certificate-meta">
-          <span>Date: {formatDate(new Date())}</span>
-          <span>Certificate No: Zanlink/{doc.number}</span>
-        </div>
-        <h2>Certificate of Completion</h2>
-        <p className="certificate-intro">This is to confirm and certify that the job was done successfully at {doc.clientName} and the below materials were issued through requisition no. {doc.number}.</p>
-        <p><strong>Site Name:</strong> {doc.clientName}</p>
-        <h3>Materials Used</h3>
-        <table className="paper-table">
-          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
-          <tbody>
-            {(doc.maintenance?.items || []).map((item, index) => (
-              <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
-            ))}
-          </tbody>
-        </table>
-        <p>The site has been inspected for the completion of the job carried.</p>
-        <div className="certificate-signoff">
-          <strong>Certified by Head of Department</strong>
-          <span>Name: {doc.hod?.approvedBy ? "Head of Department" : "----------------"}</span>
-          <span>Signature: ----------------</span>
-          <span>Date: {formatDate(new Date())}</span>
-        </div>
-      </article>
+      <MaintenanceDocumentPreview doc={doc} printId={printId} certificate />
     </section>
   );
 }
 
 function CompletedEngineerDocuments({ user, doc }) {
+  const onboardingPrintId = `onboarding-print-${doc.id}`;
+  const stockPrintId = `stock-print-${doc.id}`;
   async function download(kind, filename) {
     const blob = await api.downloadDocument(user, doc.id, kind);
     const url = URL.createObjectURL(blob);
@@ -362,20 +365,21 @@ function CompletedEngineerDocuments({ user, doc }) {
         <div className="button-row">
           <button className="btn" onClick={() => download("onboarding", `${doc.clientName}_onboarding.pdf`)}>Download Onboarding PDF</button>
           <button className="btn secondary" onClick={() => download("stock-requisition", `${doc.clientName}_stock_requisition.pdf`)}>Download Stock Requisition PDF</button>
-          <button className="btn secondary" onClick={() => window.print()}>Print This Page</button>
+          <button className="btn secondary" onClick={() => printElementById(onboardingPrintId)}>Print Onboarding Doc</button>
+          <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Doc</button>
         </div>
       </div>
       <div className="document-preview-grid">
-        <OnboardingPreview doc={doc} />
-        <StockRequisitionPreview doc={doc} />
+        <OnboardingPreview doc={doc} printId={onboardingPrintId} />
+        <StockRequisitionPreview doc={doc} printId={stockPrintId} />
       </div>
     </section>
   );
 }
 
-function OnboardingPreview({ doc }) {
+function OnboardingPreview({ doc, printId, extraClass = "" }) {
   return (
-    <article className="paper-form">
+    <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head"><span className="paper-logo">zanlink</span><h2>Customer Onboarding Form</h2><span>Form No. {doc.number}</span></header>
       <h3>Customer Information</h3>
       <div className="check-row">
@@ -411,9 +415,9 @@ function PaperCheck({ label, active = false }) {
   return <span className="paper-check"><span className={active ? "checked-box" : "empty-box"}>{active ? "✓" : ""}</span>{label}</span>;
 }
 
-function StockRequisitionPreview({ doc }) {
+function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
   return (
-    <article className="paper-form">
+    <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>Install Requisition No. {doc.number}</p></div></header>
       <table className="paper-table">
         <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
@@ -436,6 +440,44 @@ function StockRequisitionPreview({ doc }) {
 
 function Signature({ label, name, position }) {
   return <div className="signature-row"><strong>{label}</strong><Field label="Name" value={name} /><Field label="Position" value={position} /><Field label="Signature" value="" /><Field label="Date" value={formatDate(new Date())} /></div>;
+}
+
+function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate = false }) {
+  return (
+    <article id={printId} className={`paper-form certificate-form ${extraClass}`}>
+      <div className="certificate-logo">zanlink</div>
+      <div className="certificate-meta">
+        <span>Date: {formatDate(new Date())}</span>
+        <span>{certificate ? "Certificate" : "Request"} No: {doc.number}</span>
+      </div>
+      <h2>{certificate ? "Certificate of Completion" : "Maintenance Request"}</h2>
+      <p className="certificate-intro">
+        {certificate
+          ? `This is to confirm and certify that the job was done successfully at ${doc.clientName} and the below materials were issued through requisition no. ${doc.number}.`
+          : `This maintenance request records the reported fault and recommended action for ${doc.clientName}.`}
+      </p>
+      <p><strong>Site Name:</strong> {doc.clientName}</p>
+      <p><strong>Location:</strong> {doc.location}</p>
+      <p><strong>Service:</strong> {doc.service}</p>
+      <p><strong>Fault:</strong> {doc.maintenance?.fault || "-"}</p>
+      <p><strong>Recommended Action:</strong> {doc.maintenance?.action || "-"}</p>
+      <h3>Materials Used</h3>
+      <table className="paper-table">
+        <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
+        <tbody>
+          {(doc.maintenance?.items || []).map((item, index) => (
+            <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="certificate-signoff">
+        <strong>{certificate ? "Certified by Head of Department" : "HOD Review"}</strong>
+        <span>Name: {doc.hod?.approvedBy ? "Head of Department" : "----------------"}</span>
+        <span>Signature: ----------------</span>
+        <span>Date: {formatDate(new Date())}</span>
+      </div>
+    </article>
+  );
 }
 
 function Doc1Actions({ user, doc, run }) {
@@ -462,17 +504,20 @@ function Doc1Actions({ user, doc, run }) {
   });
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
   const engineerEquipment = doc.store?.items || [];
-  const [accountEquipment, setAccountEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
+  const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
+  const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
     ...item,
     issuedQty: storeOpen && Number(item.issuedQty || 0) === 0 ? Number(item.requestedQty || 0) : Number(item.issuedQty || 0),
   })));
   const [storeRemarks, setStoreRemarks] = useState(doc.store?.remarks || "");
   const [managementRemarks, setManagementRemarks] = useState(doc.management?.remarks || "");
+  const storeOnboardingPrintId = `store-onboarding-print-${doc.id}`;
+  const storeStockPrintId = `store-stock-print-${doc.id}`;
 
   return (
     <>
-      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, sales), "Moved to Accounts.")}>
+      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, equipment: salesEquipment }), "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -480,7 +525,7 @@ function Doc1Actions({ user, doc, run }) {
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
           <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
           {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
-          {numberInput("Total Equipment Cost", "packageCost", sales, setSales, !salesOpen)}
+          <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
           {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
           {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
@@ -488,16 +533,22 @@ function Doc1Actions({ user, doc, run }) {
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
           <label>Time<input type="time" readOnly value={sales.requestedTime} /></label>
         </div>
+        <EquipmentCostEditor items={salesEquipment} setItems={setSalesEquipment} locked={!salesOpen} currency={sales.currency || "TZS"} />
       </ActionPanel>
       {!salesOnly && (
         <>
-          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, { ...accounts, equipment: accountEquipment }), "Moved to Store.")}>
-            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
-            <EquipmentCostEditor items={accountEquipment} setItems={setAccountEquipment} locked={!accountsOpen} currency={accounts.billInUsd ? "USD" : (sales.currency || "TZS")} />
+          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
               <ActionPanel title="Store Section" enabled={storeOpen} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
+                <div className="button-row no-print">
+                  <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
+                  <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
+                </div>
+                <OnboardingPreview doc={doc} printId={storeOnboardingPrintId} extraClass="print-only-document" />
+                <StockRequisitionPreview doc={{ ...doc, store: { ...doc.store, items } }} printId={storeStockPrintId} extraClass="print-only-document" />
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
                 {!storeManager && <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>}
               </ActionPanel>
@@ -520,16 +571,21 @@ function MaintenanceActions({ user, doc, run }) {
   const accountsOnly = user.role === "Accounts";
   const [hodRemarks, setHodRemarks] = useState(doc.hod?.remarks || "");
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
+  const hodPrintId = `hod-maintenance-print-${doc.id}`;
   return (
     <>
       <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
       {!accountsOnly && (
         <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
+          <div className="button-row no-print">
+            <button className="btn secondary" type="button" onClick={() => printElementById(hodPrintId)}>Print Maintenance Doc</button>
+          </div>
+          <MaintenanceDocumentPreview doc={{ ...doc, hod: { ...doc.hod, remarks: hodRemarks } }} printId={hodPrintId} extraClass="print-only-document" />
           <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
         </ActionPanel>
       )}
       <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Maintenance completed.")}>
-        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
       </ActionPanel>
     </>
   );
@@ -665,6 +721,10 @@ function EngineerItemEditor({ items, setItems }) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, requestedQty: Number(value) } : item));
   }
 
+  function updateUnitCost(index, value) {
+    setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
+  }
+
   const matchingStockItems = engineerStockItems.filter((stockItem) =>
     `${stockItem.id} ${stockItem.description}`.toLowerCase().includes(stockSearch.toLowerCase())
   );
@@ -677,7 +737,7 @@ function EngineerItemEditor({ items, setItems }) {
       </label>
       <div className="table-wrap engineer-items-table">
         <table>
-          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Action</th></tr></thead>
+          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost</th><th>Action</th></tr></thead>
           <tbody>
             {visibleItems.map((item, visibleIndex) => {
               const itemIndex = startIndex + visibleIndex;
@@ -687,6 +747,7 @@ function EngineerItemEditor({ items, setItems }) {
                   <td><span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span></td>
                   <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{matchingStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}{item.name && !matchingStockItems.some((stockItem) => stockItem.description === item.name) && <option value={item.name}>{item.name}</option>}</select></td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
+                  <td><input required min="0" type="number" value={item.unitCost || ""} onChange={(event) => updateUnitCost(itemIndex, event.target.value)} /></td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
                 </tr>
               );
@@ -761,8 +822,8 @@ function ServiceSelect({ form, setForm, label }) {
   );
 }
 
-function textInput(label, key, form, setForm, disabled = false) {
-  return <label>{label}<input disabled={disabled} required value={form[key] || ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>;
+function textInput(label, key, form, setForm, disabled = false, required = true) {
+  return <label>{label}<input disabled={disabled} required={required} value={form[key] || ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>;
 }
 
 function numberInput(label, key, form, setForm, disabled = false) {

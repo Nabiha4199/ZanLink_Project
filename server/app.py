@@ -48,9 +48,13 @@ EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]
 
 
 USERS = [
+    {"id": "u1", "name": "Engineer Team", "username": "engineer", "email": "engineer@iitmz.ac.in", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
+    {"id": "u2", "name": "Sales Team", "username": "sales", "email": "sales@iitmz.ac.in", "password": "demo1234", "role": "Sales", "department": "Sales"},
+    {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
     {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
     {"id": "u5", "name": "Store Team", "username": "store", "email": "store@iitmz.ac.in", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "email": "hod@iitmz.ac.in", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u7", "name": "Management Team", "username": "management", "email": "management@iitmz.ac.in", "password": "demo1234", "role": "Management", "department": "Management"},
 ]
 
 REGISTERABLE_ROLES = {
@@ -77,7 +81,7 @@ def history(user_id: str, action: str, note: str = "") -> dict:
 
 
 STATE = {
-    "counters": {"doc1": 2, "maintenance": 2, "summary": 1},
+    "counters": {"request": 3, "summary": 1},
     "clients": [
         {"id": "c1", "name": "Stone Town Hotel", "contact": "+255 777 100 400", "email": "info@stonetownhotel.example", "locations": ["Zanzibar"], "createdAt": now_iso()},
         {"id": "c2", "name": "Airport Office", "contact": "+255 777 222 111", "email": "office@airport.example", "locations": ["Abeid Amani Karume Airport"], "createdAt": now_iso()},
@@ -119,7 +123,7 @@ STATE = {
         {
             "id": "m1",
             "type": "maintenance",
-            "number": "MNT-000001",
+            "number": "REQ-000002",
             "clientId": "c2",
             "clientName": "Airport Office",
             "contact": "+255 777 222 111",
@@ -266,12 +270,13 @@ def find_summary(summary_id: str) -> dict | None:
 
 
 def next_number(kind: str) -> str:
-    value = STATE["counters"][kind]
-    STATE["counters"][kind] = value + 1
     if kind == "summary":
+        value = STATE["counters"][kind]
+        STATE["counters"][kind] = value + 1
         return f"Zanlink/{value:06d}"
-    if kind == "maintenance":
-        return f"MNT-{value:06d}"
+
+    value = STATE["counters"].setdefault("request", 1)
+    STATE["counters"]["request"] = value + 1
     return f"REQ-{value:06d}"
 
 
@@ -397,6 +402,75 @@ def generate_summary(doc: dict) -> dict:
 
 def visible_documents_for(user: dict) -> list[dict]:
     return STATE["documents"]
+
+
+def parse_iso(value: str | None) -> datetime:
+    try:
+        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def latest_history_note(doc: dict, *actions: str) -> str:
+    matching_actions = tuple(action.lower() for action in actions)
+    for item in reversed(doc.get("history", [])):
+        action = str(item.get("action", "")).lower()
+        if not matching_actions or any(expected in action for expected in matching_actions):
+            note = str(item.get("note") or "").strip()
+            if note:
+                return note
+    return ""
+
+
+def request_report_row(doc: dict) -> dict:
+    is_pending = str(doc.get("status", "")).startswith("Pending")
+    is_rejected = "Returned" in str(doc.get("status", ""))
+    is_successful = doc.get("status") == "Completed" or bool(doc.get("workflowCompletedAt"))
+    is_approved = is_successful or any(
+        doc.get(section, {}).get("approvedAt")
+        for section in ("hod", "store", "management")
+    )
+    pending_reason = ""
+    rejection_reason = ""
+    if is_pending:
+        pending_reason = f"Waiting for {doc.get('currentDepartment', 'the next department')} action."
+        latest_note = latest_history_note(doc)
+        if latest_note:
+            pending_reason = f"{pending_reason} Last update: {latest_note}"
+    if is_rejected:
+        rejection_reason = latest_history_note(doc, "returned", "rejected") or "Returned for correction."
+    return {
+        "id": doc["id"],
+        "number": doc["number"],
+        "type": doc["type"],
+        "clientName": doc["clientName"],
+        "service": doc.get("service", ""),
+        "location": doc.get("location", ""),
+        "status": doc["status"],
+        "currentDepartment": doc["currentDepartment"],
+        "createdAt": doc["createdAt"],
+        "approved": is_approved,
+        "pending": is_pending,
+        "successful": is_successful,
+        "rejected": is_rejected,
+        "pendingReason": pending_reason,
+        "rejectionReason": rejection_reason,
+    }
+
+
+def build_request_report(docs: list[dict], days: int) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    period_docs = [doc for doc in docs if parse_iso(doc.get("createdAt")) >= cutoff]
+    rows = [request_report_row(doc) for doc in sorted(period_docs, key=lambda item: parse_iso(item.get("createdAt")), reverse=True)]
+    return {
+        "days": days,
+        "requests": rows,
+        "totalRequests": len(rows),
+        "approvedRequests": len([row for row in rows if row["approved"]]),
+        "pendingRequests": len([row for row in rows if row["pending"]]),
+        "successfulRequests": len([row for row in rows if row["successful"]]),
+        "rejectedRequests": len([row for row in rows if row["rejected"]]),
+    }
 
 
 def ensure_document_access(user: dict, doc: dict) -> None:
@@ -1078,19 +1152,31 @@ def sales_submit(document_id: str):
     client_name = require_text(payload, "clientName", "Client name")
     location = require_text(payload, "location", "Location")
     subscription = require_text(payload, "subscription", "Subscription")
-    equipment = deepcopy(doc.get("store", {}).get("items", []))
     currency = str(payload.get("currency") or "TZS").upper()
     if currency not in {"TZS", "USD"}:
         raise ValueError("Money type must be TZS or USD")
+    source_equipment = payload.get("equipment") or doc.get("store", {}).get("items", [])
+    equipment = validate_items(source_equipment, require_cost=True, context="Sales equipment")
+    store_items = deepcopy(doc.get("store", {}).get("items", []))
+    if len(equipment) != len(store_items):
+        raise ValueError("Sales must provide a cost for every requested equipment item")
+    for index, (sales_item, store_item) in enumerate(zip(equipment, store_items), start=1):
+        if sales_item["name"] != store_item.get("name") or float(sales_item["requestedQty"]) != float(store_item.get("requestedQty") or 0):
+            raise ValueError(f"Sales equipment {index} must match the original request")
+        store_item["unitCost"] = sales_item["unitCost"]
+        store_item["costCurrency"] = currency
+        sales_item["costCurrency"] = currency
+    package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
     submitted_at = datetime.now(timezone.utc)
     doc["clientName"] = client_name
     doc["location"] = location
+    doc["store"]["items"] = store_items
     doc["sales"] = {
         "clientName": client_name,
         "location": location,
         "surveyFormNo": require_text(payload, "surveyFormNo", "Survey form number"),
         "amount": require_number(payload, "amount", "Sales total amount", minimum=0, allow_zero=False),
-        "packageCost": require_number(payload, "packageCost", "Package cost", minimum=0) if payload.get("packageCost") not in (None, "") else 0,
+        "packageCost": package_cost,
         "additionalNpr": require_number(payload, "additionalNpr", "Additional NPR", minimum=0),
         "subscription": subscription,
         "mbr": require_number(payload, "mbr", "MBR", minimum=0),
@@ -1098,7 +1184,7 @@ def sales_submit(document_id: str):
         "requestedDate": submitted_at.date().isoformat(),
         "requestedTime": submitted_at.strftime("%H:%M"),
         "currency": currency,
-        "equipment": equipment,
+        "equipment": deepcopy(equipment),
         "remarks": subscription,
     }
     set_route(doc, "Pending Accounts", "Accounts")
@@ -1121,8 +1207,8 @@ def accounts_submit(document_id: str):
     payload = request.get_json(force=True)
     doc["accounts"] = {
         "billingAmount": require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=doc["type"] == "maintenance"),
-        "invoiceNumber": require_text(payload, "invoiceNumber", "Invoice number"),
-        "remarks": optional_text(payload, "remarks"),
+        "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
+        "remarks": require_text(payload, "remarks", "Remarks", max_length=500),
         "billInUsd": bool(payload.get("billInUsd")),
         "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
     }
@@ -1131,16 +1217,16 @@ def accounts_submit(document_id: str):
         doc["history"].append(history(user["id"], "Maintenance billing added", "Maintenance completed and returned to Engineer."))
         notify("Engineer", f"{doc['number']} maintenance request has been completed.")
     else:
-        source_equipment = payload.get("equipment") or doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
-        equipment = validate_items(source_equipment, require_cost=True, context="Account equipment")
+        source_equipment = doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
+        equipment = validate_items(source_equipment, require_cost=True, context="Sales equipment")
         store_items = deepcopy(doc.get("store", {}).get("items", []))
         if len(equipment) != len(store_items):
-            raise ValueError("Accounts must provide a cost for every requested equipment item")
-        for index, (account_item, store_item) in enumerate(zip(equipment, store_items), start=1):
-            if account_item["name"] != store_item.get("name") or float(account_item["requestedQty"]) != float(store_item.get("requestedQty") or 0):
-                raise ValueError(f"Account equipment {index} must match the original request")
-            store_item["unitCost"] = account_item["unitCost"]
-            store_item["costCurrency"] = doc["accounts"]["currency"]
+            raise ValueError("Sales must provide a cost for every requested equipment item")
+        for index, (sales_item, store_item) in enumerate(zip(equipment, store_items), start=1):
+            if sales_item["name"] != store_item.get("name") or float(sales_item["requestedQty"]) != float(store_item.get("requestedQty") or 0):
+                raise ValueError(f"Sales equipment {index} must match the original request")
+            store_item["unitCost"] = sales_item["unitCost"]
+            store_item["costCurrency"] = sales_item.get("costCurrency") or doc.get("sales", {}).get("currency") or doc["accounts"]["currency"]
         doc["store"]["items"] = store_items
         doc.setdefault("sales", {})["equipment"] = deepcopy(store_items)
         doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in store_items)
@@ -1279,16 +1365,22 @@ def download_maintenance_certificate(document_id: str):
 
 @app.get("/api/reports")
 def reports():
-    current_user()
+    user = current_user()
+    docs = deepcopy(visible_documents_for(user))
     status_counts = {}
-    for doc in STATE["documents"]:
+    for doc in docs:
         status_counts[doc["status"]] = status_counts.get(doc["status"], 0) + 1
     return jsonify(
         {
-            "totalDocuments": len(STATE["documents"]),
+            "totalDocuments": len(docs),
             "totalSummaries": len(STATE["summaries"]),
             "unreadNotifications": len([item for item in STATE["notifications"] if not item["read"]]),
             "statusCounts": status_counts,
+            "periods": {
+                "day": build_request_report(docs, 1),
+                "week": build_request_report(docs, 7),
+                "month": build_request_report(docs, 30),
+            },
         }
     )
 

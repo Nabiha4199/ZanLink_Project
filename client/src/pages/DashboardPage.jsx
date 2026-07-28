@@ -1,7 +1,8 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { canCreate, statusClass } from "../utils/permissions";
 
 export default function DashboardPage({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance }) {
+  const [workflowDoc, setWorkflowDoc] = useState(null);
   const stats = useMemo(() => [
     ["Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "⌛"],
     ["Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "↩"],
@@ -26,35 +27,55 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
         <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
         <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
       </section>
-      <DocumentTable user={user} documents={documents} onOpen={onOpen} />
+      <DocumentTable user={user} documents={documents} onOpen={onOpen} onShowWorkflow={setWorkflowDoc} />
+      {workflowDoc && <WorkflowModal doc={workflowDoc} onClose={() => setWorkflowDoc(null)} />}
     </>
   );
 }
 
-function DocumentTable({ user, documents, onOpen }) {
+function DocumentTable({ user, documents, onOpen, onShowWorkflow }) {
   if (!documents.length) return <div className="panel empty">No documents match this view.</div>;
   return (
-    <div className="table-wrap">
+    <div className="table-wrap dashboard-table-wrap">
       <table>
         <thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Current Department</th><th>Action</th></tr></thead>
         <tbody>
           {documents.map((doc) => {
             return (
-              <React.Fragment key={doc.id}>
-                <tr>
-                  <td><strong>{doc.number}</strong></td>
-                  <td>{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
-                  <td>{doc.clientName}<br /><small>{doc.location}</small></td>
-                  <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
-                  <td>{doc.currentDepartment}</td>
-                  <td><button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button></td>
-                </tr>
-                <tr><td colSpan="6"><WorkflowTracker type={doc.type} status={doc.status} /></td></tr>
-              </React.Fragment>
+              <tr key={doc.id}>
+                <td><strong>{doc.number}</strong></td>
+                <td>{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
+                <td>{doc.clientName}<br /><small>{doc.location}</small></td>
+                <td><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
+                <td>{doc.currentDepartment}</td>
+                <td>
+                  <div className="table-actions">
+                    <button className="btn secondary" onClick={() => onOpen(doc.id)}>Open</button>
+                    <button className="btn secondary" type="button" onClick={() => onShowWorkflow(doc)}>Workflow Progress</button>
+                  </div>
+                </td>
+              </tr>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function WorkflowModal({ doc, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="workflow-modal" role="dialog" aria-modal="true" aria-labelledby="workflow-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="section-title">
+          <div>
+            <h2 id="workflow-modal-title">Workflow Progress</h2>
+            <p>{doc.number} / {doc.clientName}</p>
+          </div>
+          <button className="btn secondary" type="button" onClick={onClose}>Close</button>
+        </div>
+        <WorkflowTracker type={doc.type} status={doc.status} />
+      </section>
     </div>
   );
 }
