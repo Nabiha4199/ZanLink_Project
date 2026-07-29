@@ -140,8 +140,14 @@ export default function LoginPage({ onLogin, showError }) {
   const [authError, setAuthError] = useState("");
 
   function reportAuthError(error) {
+    const message = error?.message || String(error);
+    if (message.includes("System Admin approval")) {
+      setNotice(message);
+      setAuthError("");
+      return;
+    }
     setNotice("");
-    setAuthError(error?.message || String(error));
+    setAuthError(message);
   }
 
   function selectRole(role) {

@@ -15,6 +15,7 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
         <button className={view === "clients" ? "active" : ""} onClick={() => onNavigate("clients")}><span className="nav-icon">♙</span>Clients</button>
         {canCreate(user) && <button data-tour="create" className={view === "doc1" ? "active" : ""} onClick={() => onNavigate("doc1")}><span className="nav-icon">＋</span>New Onboarding</button>}
         {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><span className="nav-icon">◇</span>New Maintenance</button>}
+        {user.role === "System Admin" && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><span className="nav-icon">♧</span>User Management</button>}
         <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><span className="nav-icon">▤</span>Client Summaries</button>
         <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><span className="nav-icon">▦</span>Reports</button>
       </nav>

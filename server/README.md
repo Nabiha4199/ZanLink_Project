@@ -4,7 +4,13 @@ Flask API for the Zanlink document workflow. Workflow state is currently held in
 
 ## Environment
 
-Copy `.env.example` to `.env`. The server loads it automatically. Supported settings are `HOST`, `PORT`, `FLASK_DEBUG`, comma-separated `CORS_ORIGINS`, and `GOOGLE_CLIENT_ID`.
+Copy `.env.example` to `.env`. For local-only secrets, use `.env.local`; it overrides no existing environment variables and is loaded after `.env`. Supported settings include `HOST`, `PORT`, `FLASK_DEBUG`, comma-separated `CORS_ORIGINS`, `GOOGLE_CLIENT_ID`, and the password-reset settings below.
+
+### Password-reset email
+
+Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` for an account allowed to send password-reset emails. For Gmail, `SMTP_PASSWORD` must be a valid Google app password, not the normal account password. Set `APP_URL` to the public client URL so reset links open the correct app. `SUPPORT_EMAIL` is the contact address shown when delivery fails; leave it empty to show a generic administrator message.
+
+After changing these values, restart the server and request a fresh reset link. Failed requests deliberately invalidate their reset token.
 
 Google sign-in uses one Web application OAuth client ID on both the client and server. Put the same value in `server/.env` as `GOOGLE_CLIENT_ID` and in `client/.env` as `VITE_GOOGLE_CLIENT_ID`. For local development, add `http://localhost:5173` to that OAuth client's Authorized JavaScript origins in Google Cloud Console.
 

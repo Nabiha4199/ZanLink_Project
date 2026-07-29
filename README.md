@@ -46,9 +46,13 @@ npm run dev
 
 The client runs at `http://localhost:5173`.
 
-## Demo accounts
+## Local demo accounts
 
-All demo accounts use password `demo1234`: `engineer`, `sales`, `accounts`, `store`, `management`, `hod`, and `admin`.
+The development server includes seeded accounts for local workflow testing. Do not use those accounts or their seeded passwords in a deployed environment; configure a real identity provider and rotate all credentials before publishing.
+
+## Password reset
+
+Configure the server's SMTP settings and `SUPPORT_EMAIL` as described in `server/.env.example`. Then restart the server, use **Forgot password**, and sign in with the new password after following the emailed reset link.
 
 ## Google sign-in
 

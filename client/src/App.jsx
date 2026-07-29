@@ -8,6 +8,7 @@ import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ReportsPage from "./pages/ReportsPage";
+import UserManagementPage from "./pages/UserManagementPage";
 import { api } from "./services/api";
 import { formatDate, money } from "./utils/formatters";
 import { canAct, statusClass } from "./utils/permissions";
@@ -20,6 +21,7 @@ function App() {
   const [summaries, setSummaries] = useState([]);
   const [clients, setClients] = useState([]);
   const [reports, setReports] = useState(null);
+  const [users, setUsers] = useState([]);
   const [filters, setFilters] = useState({ q: "", type: "", status: "", department: "" });
   const [message, setMessage] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
@@ -28,16 +30,20 @@ function App() {
 
   async function refresh(nextFilters = filters) {
     if (!user) return;
-    const [docs, summaryData, reportData, clientData] = await Promise.all([
+    const [accountData, docs, summaryData, reportData, clientData, userData] = await Promise.all([
+      api.account(user),
       api.documents(user, nextFilters),
       api.summaries(user),
       api.reports(user),
       api.clients(user),
+      user.role === "System Admin" ? api.users(user) : Promise.resolve([]),
     ]);
     setDocuments(docs);
     setSummaries(summaryData);
     setReports(reportData);
     setClients(clientData);
+    setUsers(userData);
+    setUser((currentUser) => JSON.stringify(currentUser) === JSON.stringify(accountData) ? currentUser : accountData);
   }
 
   useEffect(() => {
@@ -116,6 +122,42 @@ function App() {
     }
   }
 
+  async function updateUser(userId, changes) {
+    try {
+      await api.updateUser(user, userId, changes);
+      await refresh();
+      setMessage(changes.approve ? "Google account approved. The user can now continue with Google sign-in." : changes.active === false ? "User access revoked." : changes.active === true ? "User access restored." : "User role updated.");
+      setTimeout(() => setMessage(""), 2600);
+    } catch (error) {
+      showError(error);
+      throw error;
+    }
+  }
+
+  async function createUser(payload) {
+    try {
+      await api.createUser(user, payload);
+      await refresh();
+      setMessage("User account created.");
+      setTimeout(() => setMessage(""), 2600);
+    } catch (error) {
+      showError(error);
+      throw error;
+    }
+  }
+
+  async function deleteUser(userId) {
+    try {
+      await api.deleteUser(user, userId);
+      await refresh();
+      setMessage("User account deleted.");
+      setTimeout(() => setMessage(""), 2600);
+    } catch (error) {
+      showError(error);
+      throw error;
+    }
+  }
+
   if (!user) return (
     <LoginPage onLogin={setUser} showError={showError} />
   );
@@ -133,6 +175,8 @@ function App() {
           <MaintenanceForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
         ) : view === "clients" ? (
           <ClientsPage clients={clients} onRegister={registerClient} />
+        ) : view === "users" && user.role === "System Admin" ? (
+          <UserManagementPage currentUser={user} users={users} onCreateUser={createUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} />
         ) : view === "summaries" ? (
           <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
@@ -271,7 +315,7 @@ function printElementById(printId) {
 }
 
 function DocumentDetail({ user, doc, onBack, run }) {
-  const managementReview = doc.type === "doc1" && (user.role === "Management" || user.department === "Management");
+  const managementReview = doc.type === "doc1" && user.role !== "System Admin" && (user.role === "Management" || user.department === "Management");
   const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || doc.workflowCompletedAt) && (user.role === "Engineer" || user.role === "System Admin");
   const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
   return (

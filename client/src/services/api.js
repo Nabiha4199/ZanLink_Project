@@ -20,7 +20,11 @@ export const api = {
   setPassword: (user, payload) => request("/api/account/password", { method: "POST", body: JSON.stringify(payload) }, user),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
   resetPassword: (payload) => request("/api/reset-password", { method: "POST", body: JSON.stringify(payload) }),
-  users: () => request("/api/users"),
+  account: (user) => request("/api/account", {}, user),
+  users: (user) => request("/api/users", {}, user),
+  createUser: (user, payload) => request("/api/users", { method: "POST", body: JSON.stringify(payload) }, user),
+  updateUser: (user, userId, payload) => request(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }, user),
+  deleteUser: (user, userId) => request(`/api/users/${userId}`, { method: "DELETE" }, user),
   documents: (user, filters = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
     return request(`/api/documents?${params.toString()}`, {}, user);

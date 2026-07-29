@@ -29,7 +29,9 @@ from reportlab.platypus import Table
 from reportlab.platypus import TableStyle
 
 
-load_dotenv()
+SERVER_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(SERVER_DIRECTORY, ".env"))
+load_dotenv(os.path.join(SERVER_DIRECTORY, ".env.local"))
 app = Flask(__name__)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
 DEFAULT_GOOGLE_CLIENT_ID = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com"
@@ -42,6 +44,7 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
@@ -51,7 +54,7 @@ USERS = [
     {"id": "u1", "name": "Engineer Team", "username": "engineer", "email": "engineer@iitmz.ac.in", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
     {"id": "u2", "name": "Sales Team", "username": "sales", "email": "sales@iitmz.ac.in", "password": "demo1234", "role": "Sales", "department": "Sales"},
     {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
-    {"id": "u4", "name": "Abdallah", "username": "admin", "email": "zda23b014@iitmz.ac.in", "password": "Abdallah123", "role": "System Admin", "department": "Management"},
+    {"id": "u4", "name": "System Admin", "username": "admin", "email": "admin@iitmz.ac.in", "password": "demo1234", "role": "System Admin", "department": "Management"},
     {"id": "u5", "name": "Store Team", "username": "store", "email": "store@iitmz.ac.in", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "email": "hod@iitmz.ac.in", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
     {"id": "u7", "name": "Management Team", "username": "management", "email": "management@iitmz.ac.in", "password": "demo1234", "role": "Management", "department": "Management"},
@@ -64,6 +67,11 @@ REGISTERABLE_ROLES = {
     "Store": {"role": "Store", "department": "Store"},
     "Management": {"role": "Management", "department": "Management"},
     "HOD": {"role": "Head of Department", "department": "HOD"},
+}
+
+MANAGEABLE_ROLES = {
+    **REGISTERABLE_ROLES,
+    "System Admin": {"role": "System Admin", "department": "Management"},
 }
 
 
@@ -159,6 +167,8 @@ STATE = {
 
 def public_user(user: dict) -> dict:
     safe = deepcopy(user)
+    safe["active"] = user.get("active", True)
+    safe["pendingApproval"] = user.get("pendingApproval", False)
     safe["hasPassword"] = bool(user.get("password"))
     safe["googleLinked"] = bool(user.get("googleSub"))
     safe.pop("password", None)
@@ -209,6 +219,24 @@ def require_allowed_email(value: str | None, action: str = "use") -> str:
     if not is_allowed_email(email):
         raise ValueError(f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can {action}")
     return email
+
+
+def password_reset_support_message() -> str:
+    if SUPPORT_EMAIL:
+        return f"Contact {SUPPORT_EMAIL} for help."
+    return "Contact your system administrator for help."
+
+
+def password_reset_delivery_error(error: Exception) -> str:
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "The email provider rejected the SMTP username or app password."
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        return "The email provider rejected the recipient address."
+    if isinstance(error, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, TimeoutError, OSError)):
+        return "The server could not connect to the configured email provider."
+    if isinstance(error, smtplib.SMTPException):
+        return "The configured email provider rejected the reset message."
+    return "The reset email could not be sent."
 
 
 def send_password_reset_email(recipient: str, reset_url: str) -> None:
@@ -284,6 +312,8 @@ def current_user() -> dict:
     user = find_user(request.headers.get("X-User-Id"))
     if not user:
         raise PermissionError("Missing or invalid X-User-Id header")
+    if not user.get("active", True):
+        raise PermissionError("Account access has been revoked")
     return user
 
 
@@ -291,6 +321,11 @@ def require_department(user: dict, *departments: str) -> None:
     allowed = user["role"] == "System Admin" or user["department"] in departments or user["role"] in departments
     if not allowed:
         raise PermissionError("This action is not allowed for your department")
+
+
+def require_system_admin(user: dict) -> None:
+    if user["role"] != "System Admin":
+        raise PermissionError("System Admin access is required")
 
 
 def set_route(doc: dict, status: str, department: str) -> None:
@@ -819,7 +854,8 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
     pdf.drawString(22 * mm, y - 24 * mm, "Name: ----------------")
     pdf.drawString(22 * mm, y - 36 * mm, "Signature: ------------")
     pdf.drawString(22 * mm, y - 48 * mm, "Date: -----------------")
-    pdf.drawString(70 * mm, y - 24 * mm, find_user(doc.get("hod", {}).get("approvedBy"))["name"] if doc.get("hod", {}).get("approvedBy") else "Head of Department")
+    approved_by = find_user(doc.get("hod", {}).get("approvedBy"))
+    pdf.drawString(70 * mm, y - 24 * mm, approved_by["name"] if approved_by else "Head of Department")
     pdf.drawString(70 * mm, y - 48 * mm, datetime.now().strftime("%d/%m/%Y"))
 
     pdf.showPage()
@@ -850,7 +886,104 @@ def health():
 
 @app.get("/api/users")
 def users():
+    require_system_admin(current_user())
     return jsonify([public_user(user) for user in USERS])
+
+
+@app.get("/api/account")
+def account():
+    return jsonify(public_user(current_user()))
+
+
+@app.post("/api/users")
+def create_user():
+    require_system_admin(current_user())
+    payload = request.get_json(force=True)
+    email = require_allowed_email(payload.get("email"), "be added")
+    if any(user.get("email") == email for user in USERS):
+        raise ValueError("Email is already registered")
+
+    role_key = require_text(payload, "role", "Role", max_length=40)
+    role_info = MANAGEABLE_ROLES.get(role_key)
+    if not role_info:
+        raise ValueError("Please select a valid role")
+
+    user = {
+        "id": f"u-{uuid4()}",
+        "name": require_text(payload, "name", "Full name"),
+        "username": available_username(email),
+        "email": email,
+        "active": True,
+        **role_info,
+    }
+    password = str(payload.get("password") or "")
+    if password:
+        user["password"] = require_password(payload)
+    USERS.append(user)
+    return jsonify(public_user(user)), 201
+
+
+@app.patch("/api/users/<user_id>")
+def update_user_role(user_id: str):
+    require_system_admin(current_user())
+    user = find_user(user_id)
+    if not user:
+        raise ValueError("User not found")
+
+    payload = request.get_json(force=True)
+    role_info = {"role": user["role"], "department": user["department"]}
+    if "role" in payload:
+        role_key = require_text(payload, "role", "Role", max_length=40)
+        role_info = MANAGEABLE_ROLES.get(role_key)
+        if not role_info:
+            raise ValueError("Please select a valid role")
+
+    active = user.get("active", True)
+    if "active" in payload:
+        if not isinstance(payload["active"], bool):
+            raise ValueError("Active must be true or false")
+        active = payload["active"]
+
+    if active and user.get("pendingApproval", False) and role_info["role"] == "Pending Approval":
+        raise ValueError("Select a role before approving this Google account")
+
+    active_admin_count = sum(
+        (item["id"] != user["id"] and item["role"] == "System Admin" and item.get("active", True))
+        or (item["id"] == user["id"] and role_info["role"] == "System Admin" and active)
+        for item in USERS
+    )
+    if active_admin_count < 1:
+        raise ValueError("At least one active System Admin account must remain")
+
+    user.update(role_info)
+    user["active"] = active
+    if active and user.get("pendingApproval", False):
+        user["pendingApproval"] = False
+    return jsonify(public_user(user))
+
+
+@app.delete("/api/users/<user_id>")
+def delete_user(user_id: str):
+    admin = current_user()
+    require_system_admin(admin)
+    user = find_user(user_id)
+    if not user:
+        raise ValueError("User not found")
+    if user["id"] == admin["id"]:
+        raise ValueError("You cannot delete your own account")
+
+    remaining_active_admins = sum(
+        item["id"] != user["id"] and item["role"] == "System Admin" and item.get("active", True)
+        for item in USERS
+    )
+    if user["role"] == "System Admin" and user.get("active", True) and remaining_active_admins < 1:
+        raise ValueError("At least one active System Admin account must remain")
+
+    USERS.remove(user)
+    for token, reset in list(PASSWORD_RESET_TOKENS.items()):
+        if reset.get("userId") == user_id:
+            PASSWORD_RESET_TOKENS.pop(token)
+    return "", 204
 
 
 @app.get("/api/clients")
@@ -894,6 +1027,8 @@ def login():
     if not selected_role:
         raise ValueError("Please select your role")
     existing_user = next((item for item in USERS if item.get("email") == email), None)
+    if existing_user and not existing_user.get("active", True):
+        return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if existing_user and not existing_user.get("password"):
         return jsonify({"error": "This account uses Google sign-in. Use Sign in with Google or reset your password first."}), 401
     user = next((item for item in USERS if item.get("email") == email and item.get("password") == payload.get("password")), None)
@@ -938,6 +1073,12 @@ def google_login():
         return jsonify({"error": "A verified Google account is required"}), 401
 
     user = next((item for item in USERS if item.get("email") == email), None)
+    if user and user.get("googleSub") and user["googleSub"] != google_sub:
+        return jsonify({"error": "This account is already linked to a different Google identity. Contact support."}), 403
+    if user and user.get("pendingApproval", False):
+        return jsonify({"error": "Your Google account is waiting for System Admin approval. You will be able to continue with Google sign-in once it is approved."}), 403
+    if user and not user.get("active", True):
+        return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if not user:
         user = {
             "id": f"u-{uuid4()}",
@@ -946,12 +1087,13 @@ def google_login():
             "email": email,
             "googleSub": google_sub,
             "picture": str(identity.get("picture") or ""),
-            "role": "Engineer",
-            "department": "Engineer",
+            "role": "Pending Approval",
+            "department": "",
+            "active": False,
+            "pendingApproval": True,
         }
         USERS.append(user)
-    if user.get("googleSub") and user["googleSub"] != google_sub:
-        return jsonify({"error": "This account is already linked to a different Google identity. Contact support."}), 403
+        return jsonify({"error": "Your Google account has been submitted for System Admin approval. Please wait for approval, then continue with Google sign-in."}), 403
 
     user["googleSub"] = google_sub
     user["picture"] = str(identity.get("picture") or user.get("picture") or "")
@@ -1014,7 +1156,9 @@ def forgot_password():
 
     user = next((item for item in USERS if item.get("email") == email), None)
     if not user:
-        return jsonify({"error": "No account is registered with that email address. Check the email or contact zda23b014@iitmz.ac.in to be added."}), 404
+        return jsonify({"error": f"No account is registered with that email address. Check the email or {password_reset_support_message()}"}), 404
+    if not user.get("active", True):
+        return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if not user_has_role(user, selected_role):
         return jsonify({"error": "That email is not registered for the selected role. Check your email and role."}), 403
 
@@ -1026,10 +1170,10 @@ def forgot_password():
     }
     try:
         send_password_reset_email(email, f"{APP_URL}/?reset_token={raw_token}")
-    except Exception:
+    except Exception as error:
         PASSWORD_RESET_TOKENS.pop(token_hash, None)
         app.logger.exception("Could not send password reset email")
-        return jsonify({"error": "Your account was found, but the system could not send the reset email because email delivery is not configured. Contact zda23b014@iitmz.ac.in."}), 503
+        return jsonify({"error": f"Your account was found, but the system could not send the reset email. {password_reset_delivery_error(error)} {password_reset_support_message()}"}), 503
 
     return jsonify({"ok": True, "message": "A password reset link has been sent to your email."})
 
