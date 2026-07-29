@@ -241,24 +241,30 @@ def password_reset_delivery_error(error: Exception) -> str:
     return "The reset email could not be sent."
 
 
-def send_password_reset_email(recipient: str, reset_url: str) -> None:
+def send_email(recipient: str, subject: str, body: str) -> None:
     if not SMTP_HOST or not SMTP_USERNAME or not SMTP_PASSWORD or not SMTP_FROM:
-        raise RuntimeError("Password reset email is not configured")
+        raise RuntimeError("Email delivery is not configured")
 
     message = EmailMessage()
-    message["Subject"] = "Reset your Zanlink password"
+    message["Subject"] = subject
     message["From"] = SMTP_FROM
     message["To"] = recipient
-    message.set_content(
-        "We received a request to reset your Zanlink password.\n\n"
-        f"Open this link within 30 minutes:\n{reset_url}\n\n"
-        "If you did not request this, you can ignore this email."
-    )
+    message.set_content(body)
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
         if SMTP_USE_TLS:
             smtp.starttls()
         smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
         smtp.send_message(message)
+
+
+def send_password_reset_email(recipient: str, reset_url: str) -> None:
+    send_email(
+        recipient,
+        "Reset your Zanlink password",
+        "We received a request to reset your Zanlink password.\n\n"
+        f"Open this link within 30 minutes:\n{reset_url}\n\n"
+        "If you did not request this, you can ignore this email.",
+    )
 
 
 def find_user(user_id: str | None) -> dict | None:
@@ -1143,33 +1149,24 @@ def register():
     payload = request.get_json(force=True)
     email = require_allowed_email(payload.get("email"), "register")
 
-    role_key = require_text(payload, "role", "Role", max_length=40)
-    role_info = REGISTERABLE_ROLES.get(role_key)
-    if not role_info:
-        raise ValueError("Please select a valid role")
-
     existing_user = next((user for user in USERS if user.get("email") == email), None)
     if existing_user:
-        if existing_user.get("password"):
-            raise ValueError("Email is already registered")
-        if not existing_user.get("googleSub"):
-            raise ValueError("Email is already registered")
-
-        existing_user["name"] = require_text(payload, "name", "Full name")
-        existing_user["password"] = require_password(payload)
-        existing_user.update(role_info)
-        return jsonify(public_user(existing_user))
-
+        if existing_user.get("pendingApproval", False):
+            return jsonify({"error": "This account is already waiting for System Admin approval."}), 409
+        return jsonify({"error": "An account already exists with this email address."}), 409
     user = {
         "id": f"u-{uuid4()}",
         "name": require_text(payload, "name", "Full name"),
         "username": available_username(email),
         "email": email,
         "password": require_password(payload),
-        **role_info,
+        "role": "Pending Approval",
+        "department": "",
+        "active": False,
+        "pendingApproval": True,
     }
     USERS.append(user)
-    return jsonify(public_user(user)), 201
+    return jsonify({"message": "Your account is waiting for System Admin approval. You can sign in after an admin assigns your role and approves it."}), 202
 
 
 @app.post("/api/account/password")
