@@ -55,6 +55,7 @@ USERS = [
     {"id": "u2", "name": "Sales Team", "username": "sales", "email": "sales@iitmz.ac.in", "password": "demo1234", "role": "Sales", "department": "Sales"},
     {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
     {"id": "u4", "name": "System Admin", "username": "admin", "email": "admin@iitmz.ac.in", "password": "demo1234", "role": "System Admin", "department": "Management"},
+    {"id": "u8", "name": "Abdallah", "username": "abdallah", "email": "zda23b014@iitmz.ac.in", "role": "System Admin", "department": "Management"},
     {"id": "u5", "name": "Store Team", "username": "store", "email": "store@iitmz.ac.in", "password": "demo1234", "role": "Store", "department": "Store"},
     {"id": "u6", "name": "Head of Department", "username": "hod", "email": "hod@iitmz.ac.in", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
     {"id": "u7", "name": "Management Team", "username": "management", "email": "management@iitmz.ac.in", "password": "demo1234", "role": "Management", "department": "Management"},
