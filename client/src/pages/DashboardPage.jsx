@@ -5,17 +5,17 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
   const [workflowDoc, setWorkflowDoc] = useState(null);
   const [statFilter, setStatFilter] = useState("all");
   const stats = useMemo(() => [
-    ["pending", "Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "⌛"],
+    ["pending", "Pending", documents.filter((doc) => doc.status.startsWith("Pending")).length, "⌛"],
     ["returned", "Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "↩"],
     ["completed", "Completed", documents.filter((doc) => doc.status === "Completed").length, "✓"],
     ["all", "Total Visible", documents.length, "▦"],
-  ], [documents, user.department]);
+  ], [documents]);
   const visibleDocuments = useMemo(() => {
-    if (statFilter === "pending") return documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed");
+    if (statFilter === "pending") return documents.filter((doc) => doc.status.startsWith("Pending"));
     if (statFilter === "returned") return documents.filter((doc) => doc.status.includes("Returned"));
     if (statFilter === "completed") return documents.filter((doc) => doc.status === "Completed");
     return documents;
-  }, [documents, statFilter, user.department]);
+  }, [documents, statFilter]);
   const activeStatLabel = stats.find(([key]) => key === statFilter)?.[1] || "Documents";
 
   return (
