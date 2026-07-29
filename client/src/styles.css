@@ -386,6 +386,96 @@
   position: relative;
 }
 
+.phone-input-wrap {
+  display: grid;
+  grid-template-columns: minmax(112px, auto) minmax(0, 1fr);
+}
+
+.country-code-picker {
+  position: relative;
+  min-width: 112px;
+}
+
+.country-code-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  background: white;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.country-code-button::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #66717f;
+}
+
+.country-flag {
+  width: 28px;
+  height: 20px;
+  flex: 0 0 28px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.country-code-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
+  gap: 4px;
+  width: min(260px, 72vw);
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.country-code-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.country-code-menu button.active,
+.country-code-menu button:hover,
+.country-code-menu button:focus-visible {
+  background: #e8f3fa;
+  color: var(--brand-strong);
+}
+
+.country-code-picker,
+.phone-input-wrap input {
+  min-width: 0;
+}
+
+.phone-input-wrap input {
+  border-radius: 0 6px 6px 0;
+}
+
 .location-input-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -460,6 +550,25 @@
 @media (max-width: 720px) {
   .segmented-control {
     grid-template-columns: 1fr;
+  }
+
+  .phone-input-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .country-code-button {
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .country-code-menu {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .phone-input-wrap input {
+    border-radius: 0 0 6px 6px;
   }
 
   .location-suggestions {
