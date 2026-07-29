@@ -11,16 +11,16 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
         <div><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>
       </div>
       <nav className="nav">
-        <button data-tour="dashboard" className={view === "dashboard" ? "active" : ""} onClick={() => onNavigate("dashboard")}><span className="nav-icon">⌂</span>Dashboard</button>
-        <button className={view === "clients" ? "active" : ""} onClick={() => onNavigate("clients")}><span className="nav-icon">♙</span>Clients</button>
-        {canCreate(user) && <button data-tour="create" className={view === "doc1" ? "active" : ""} onClick={() => onNavigate("doc1")}><span className="nav-icon">＋</span>New Onboarding</button>}
-        {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><span className="nav-icon">◇</span>New Maintenance</button>}
-        {user.role === "System Admin" && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><span className="nav-icon">♧</span>User Management</button>}
-        <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><span className="nav-icon">▤</span>Client Summaries</button>
-        <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><span className="nav-icon">▦</span>Reports</button>
+        <button data-tour="dashboard" className={view === "dashboard" ? "active" : ""} onClick={() => onNavigate("dashboard")}><span className="nav-icon">DB</span>Dashboard</button>
+        <button className={view === "clients" ? "active" : ""} onClick={() => onNavigate("clients")}><span className="nav-icon">CL</span>Clients</button>
+        {canCreate(user) && <button data-tour="create" className={view === "doc1" ? "active" : ""} onClick={() => onNavigate("doc1")}><span className="nav-icon">+</span>New Onboarding</button>}
+        {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><span className="nav-icon">MT</span>New Maintenance</button>}
+        {user.role === "System Admin" && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><span className="nav-icon">UM</span>User Management</button>}
+        <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><span className="nav-icon">CS</span>Client Summaries</button>
+        <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><span className="nav-icon">RP</span>Reports</button>
       </nav>
       <button className="tour-launch" onClick={onStartTour}><span className="nav-icon">?</span>Guided tour</button>
-      <button className="logout" onClick={onLogout}><span className="nav-icon">↪</span>Sign out</button>
+      <button className="logout" onClick={onLogout}><span className="nav-icon">OUT</span>Sign out</button>
     </aside>
   );
 }

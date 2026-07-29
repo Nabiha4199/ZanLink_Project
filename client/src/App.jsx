@@ -456,7 +456,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
 }
 
 function PaperCheck({ label, active = false }) {
-  return <span className="paper-check"><span className={active ? "checked-box" : "empty-box"}>{active ? "✓" : ""}</span>{label}</span>;
+  return <span className="paper-check"><span className={active ? "checked-box" : "empty-box"}>{active ? "X" : ""}</span>{label}</span>;
 }
 
 function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
@@ -826,9 +826,9 @@ function EngineerItemEditor({ items, setItems }) {
         <div className="engineer-table-footer">
           <button type="button" className="btn secondary engineer-add-button" onClick={() => { setItems([...items, { ...emptyItem }]); setPage(Math.floor(items.length / pageSize)); }}>+ Add Item</button>
           <div className="engineer-pagination">
-            <button type="button" className="pagination-arrow" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
+            <button type="button" className="pagination-arrow" aria-label="Previous page" disabled={page === 0} onClick={() => setPage(page - 1)}>{"<"}</button>
             <span>Page {page + 1} of {totalPages}</span>
-            <button type="button" className="pagination-arrow" aria-label="Next page" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>›</button>
+            <button type="button" className="pagination-arrow" aria-label="Next page" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{">"}</button>
           </div>
         </div>
       </div>

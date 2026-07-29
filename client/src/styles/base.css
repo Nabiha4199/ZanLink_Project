@@ -375,8 +375,8 @@ textarea {
   flex-direction: column;
   gap: 20px;
   border: 1px solid rgba(15, 40, 65, 0.06);
-  border-radius: 24px;
-  box-shadow: 0 18px 50px rgba(24, 47, 68, 0.08);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
 }
 
 .sidebar .brand {
@@ -391,7 +391,7 @@ textarea {
 .sidebar .brand-mark {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .user-box {
@@ -399,7 +399,7 @@ textarea {
   align-items: center;
   gap: 11px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 12px;
   background: #edf6fc;
 }
@@ -436,7 +436,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: transparent;
   color: #51606f;
   text-align: left;
@@ -458,10 +458,10 @@ textarea {
   display: inline-grid;
   flex: 0 0 30px;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 6px;
   background: #f2f5f7;
   color: currentColor;
-  font-size: 18px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -669,7 +669,7 @@ textarea {
 .card {
   background: var(--surface);
   border: 0;
-  border-radius: 20px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
 }
 
@@ -780,7 +780,7 @@ textarea:focus {
   overflow-x: auto;
   background: white;
   border: 0;
-  border-radius: 20px;
+  border-radius: 8px;
   padding: 8px;
   box-shadow: var(--shadow);
 }

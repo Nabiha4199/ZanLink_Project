@@ -9,11 +9,10 @@ const PERIODS = [
 ];
 
 const METRICS = [
-  ["all", "All Requests", "totalRequests"],
-  ["approved", "Approved Requests", "approvedRequests"],
-  ["pending", "Pending Requests", "pendingRequests"],
-  ["successful", "Successful Requests", "successfulRequests"],
-  ["rejected", "Rejected Requests", "rejectedRequests"],
+  ["all", "No. of Requests", "totalRequests"],
+  ["approved", "No. of Approved Requests", "approvedRequests"],
+  ["pending", "No. of Pending Requests", "pendingRequests"],
+  ["successful", "No. of Successful Requests", "successfulRequests"],
 ];
 
 export default function ReportsPage({ reports }) {
@@ -53,10 +52,11 @@ export default function ReportsPage({ reports }) {
         ))}
       </div>
 
-      <section className="stats report-stats report-metrics">
+      <section className="stats report-stats report-metrics" aria-label="Report request filters">
         {METRICS.map(([key, label, valueKey]) => (
           <button
             className={detailKey === key ? "stat active" : "stat"}
+            aria-pressed={detailKey === key}
             key={key}
             type="button"
             onClick={() => setDetailKey(key)}
@@ -77,7 +77,7 @@ export default function ReportsPage({ reports }) {
 
       <section className="panel">
         <h2>Status Breakdown</h2>
-        <div className="table-wrap">
+        <div className="table-wrap status-breakdown-wrap">
           <table className="compact-table">
             <tbody>
               {Object.entries(reports.statusCounts).map(([status, count]) => (
@@ -94,8 +94,8 @@ export default function ReportsPage({ reports }) {
 function ReportTable({ rows, mode }) {
   if (!rows.length) return <div className="empty">No requests match this report view.</div>;
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="table-wrap reports-table-wrap">
+      <table className="reports-table">
         <thead>
           <tr>
             <th>Number</th>
@@ -110,13 +110,13 @@ function ReportTable({ rows, mode }) {
         <tbody>
           {rows.map((request) => (
             <tr key={request.id}>
-              <td><strong>{request.number}</strong></td>
-              <td>{request.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
-              <td>{request.clientName}<br /><small>{request.location}</small></td>
-              <td><span className={`status ${statusClass(request.status)}`}>{request.status}</span></td>
-              <td>{request.currentDepartment}</td>
-              <td>{formatDate(request.createdAt)}</td>
-              <td>{requestReason(request, mode)}</td>
+              <td data-label="Number"><strong>{request.number}</strong></td>
+              <td data-label="Type">{request.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
+              <td data-label="Client">{request.clientName}<br /><small>{request.location}</small></td>
+              <td data-label="Status"><span className={`status ${statusClass(request.status)}`}>{request.status}</span></td>
+              <td data-label="Department">{request.currentDepartment}</td>
+              <td data-label="Created">{formatDate(request.createdAt)}</td>
+              <td data-label="Reason">{requestReason(request, mode)}</td>
             </tr>
           ))}
         </tbody>
@@ -127,7 +127,6 @@ function ReportTable({ rows, mode }) {
 
 function requestReason(request, mode) {
   if (mode === "pending" || request.pending) return request.pendingReason || "-";
-  if (mode === "rejected" || request.rejected) return request.rejectionReason || "-";
   if (mode === "successful" || request.successful) return "Workflow completed successfully.";
   if (mode === "approved" || request.approved) return request.successful ? "Final approval completed." : "Approved and waiting for the next workflow step.";
   return request.rejectionReason || request.pendingReason || "-";

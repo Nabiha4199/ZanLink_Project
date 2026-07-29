@@ -48,6 +48,7 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
 
 
 USERS = [
@@ -298,15 +299,46 @@ def find_summary(summary_id: str) -> dict | None:
     return next((summary for summary in STATE["summaries"] if summary["id"] == summary_id), None)
 
 
+def format_request_number(value: int) -> str:
+    return f"REQ-{value:06d}"
+
+
+def normalize_request_numbers() -> None:
+    seen = set()
+    next_value = 1
+    documents = sorted(STATE["documents"], key=lambda doc: (str(doc.get("createdAt") or ""), str(doc.get("id") or "")))
+
+    for doc in documents:
+        match = REQUEST_NUMBER_PATTERN.fullmatch(str(doc.get("number") or ""))
+        if match:
+            value = int(match.group(1))
+            if value not in seen:
+                seen.add(value)
+                next_value = max(next_value, value + 1)
+                continue
+
+        while next_value in seen:
+            next_value += 1
+        doc["number"] = format_request_number(next_value)
+        seen.add(next_value)
+        next_value += 1
+
+    STATE["counters"]["request"] = max(int(STATE["counters"].get("request", 1)), next_value)
+
+
 def next_number(kind: str) -> str:
     if kind == "summary":
         value = STATE["counters"][kind]
         STATE["counters"][kind] = value + 1
         return f"Zanlink/{value:06d}"
 
+    normalize_request_numbers()
     value = STATE["counters"].setdefault("request", 1)
     STATE["counters"]["request"] = value + 1
-    return f"REQ-{value:06d}"
+    return format_request_number(value)
+
+
+normalize_request_numbers()
 
 
 def current_user() -> dict:
@@ -462,10 +494,14 @@ def request_report_row(doc: dict) -> dict:
     is_pending = str(doc.get("status", "")).startswith("Pending")
     is_rejected = "Returned" in str(doc.get("status", ""))
     is_successful = doc.get("status") == "Completed" or bool(doc.get("workflowCompletedAt"))
-    is_approved = is_successful or any(
+    approval_history = any(
+        any(keyword in str(item.get("action", "")).lower() for keyword in ("approved", "submitted", "added", "billing"))
+        for item in doc.get("history", [])
+    )
+    is_approved = not is_rejected and (is_successful or approval_history or any(
         doc.get(section, {}).get("approvedAt")
         for section in ("hod", "store", "management")
-    )
+    ))
     pending_reason = ""
     rejection_reason = ""
     if is_pending:
