@@ -365,6 +365,14 @@
   margin-bottom: 14px;
 }
 
+.equipment-list-search {
+  margin-top: 8px;
+}
+
+.equipment-list-search input[type="search"] {
+  width: 100%;
+}
+
 .field-help {
   color: var(--danger);
   font-weight: 700;

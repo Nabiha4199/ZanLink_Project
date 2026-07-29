@@ -602,14 +602,20 @@ function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
 }
 
 function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS" }) {
+  const [search, setSearch] = useState("");
   function update(index, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
   }
+  const visibleItems = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => equipmentMatches(item, search));
   if (!items.length) return <div className="empty">No sales equipment added.</div>;
   return (
     <div className="items-list">
       <div className="section-title"><h2>Equipment Costs</h2></div>
-      {items.map((item, index) => (
+      <EquipmentSearch value={search} onChange={setSearch} />
+      {!visibleItems.length && <div className="empty">No equipment matches “{search}”.</div>}
+      {visibleItems.map(({ item, index }) => (
         <div className="item-row" key={index}>
           <label>Item<input disabled value={item.name || ""} readOnly /></label>
           <label>Req. Qty<span className="readonly-value">{item.requestedQty || 1}</span></label>
@@ -621,12 +627,16 @@ function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS"
 }
 
 function ReadOnlyEquipment({ title, items }) {
+  const [search, setSearch] = useState("");
+  const visibleItems = items.filter((item) => equipmentMatches(item, search));
   if (!items.length) return <div className="empty">No equipment added by Engineer.</div>;
   return (
     <div className="readonly-equipment">
       <div className="section-title"><h2>{title}</h2></div>
+      <EquipmentSearch value={search} onChange={setSearch} />
       <div className="readonly-equipment-list">
-        {items.map((item, index) => (
+        {!visibleItems.length && <div className="empty">No equipment matches “{search}”.</div>}
+        {visibleItems.map((item, index) => (
           <div className="readonly-equipment-row" key={index}>
             <div className="readonly-equipment-main">
               <span>Item</span>
@@ -645,22 +655,27 @@ function ReadOnlyEquipment({ title, items }) {
 }
 
 function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false, storeMode = false }) {
+  const [search, setSearch] = useState("");
   if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} />;
   function update(index, key, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key.includes("Qty") || key === "unitCost" ? Number(value) : value } : item));
   }
+  const visibleItems = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => equipmentMatches(item, search));
 
   if (storeMode) {
     return (
       <div className="items-list">
         <div className="section-title"><h2>Required Equipment</h2></div>
+        <EquipmentSearch value={search} onChange={setSearch} />
         <div className="table-wrap">
           <table className="store-equipment-table">
             <thead>
               <tr><th>No.</th><th>Item ID</th><th>Description</th><th>Requested Quantity</th><th>Issued Quantity</th></tr>
             </thead>
             <tbody>
-              {items.map((item, index) => (
+              {visibleItems.map(({ item, index }) => (
                 <tr key={index}>
                   <td>{index + 1}</td>
                   <td><strong>{item.itemId || item.serialNumber || "-"}</strong></td>
@@ -669,6 +684,7 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
                   <td><input aria-label={`Issued quantity for ${item.name}`} required min="1" max={item.requestedQty} type="number" disabled={locked} value={item.issuedQty} onChange={(e) => update(index, "issuedQty", e.target.value)} /></td>
                 </tr>
               ))}
+              {!visibleItems.length && <tr><td className="empty" colSpan="5">No equipment matches “{search}”.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -679,11 +695,12 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
   return (
     <div className="items-list">
       <div className="section-title"><h2>{title}</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>{addLabel}</button>}</div>
+      <EquipmentSearch value={search} onChange={setSearch} />
       <div className="table-wrap">
         <table className="stock-items-table">
           <thead><tr><th>Description</th><th>Requested Qty</th><th>Issued Qty</th><th>Item ID</th><th>Purpose</th><th>Unit Cost</th></tr></thead>
           <tbody>
-            {items.map((item, index) => (
+            {visibleItems.map(({ item, index }) => (
               <tr key={index}>
                 <td><input aria-label={`Item ${index + 1}`} required disabled={locked} value={item.name} onChange={(e) => update(index, "name", e.target.value)} /></td>
                 <td>{locked ? <span className="readonly-value">{item.requestedQty}</span> : <input aria-label={`Requested quantity for item ${index + 1}`} required min="1" type="number" value={item.requestedQty} onChange={(e) => update(index, "requestedQty", e.target.value)} />}</td>
@@ -693,6 +710,7 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
                 <td><input aria-label={`Unit cost for item ${index + 1}`} min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></td>
               </tr>
             ))}
+            {!visibleItems.length && <tr><td className="empty" colSpan="6">No equipment matches “{search}”.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -703,7 +721,6 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
 function EngineerItemEditor({ items, setItems }) {
   const pageSize = 5;
   const [page, setPage] = useState(0);
-  const [stockSearch, setStockSearch] = useState("");
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const startIndex = page * pageSize;
   const visibleItems = items.slice(startIndex, startIndex + pageSize);
@@ -725,16 +742,9 @@ function EngineerItemEditor({ items, setItems }) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
   }
 
-  const matchingStockItems = engineerStockItems.filter((stockItem) =>
-    `${stockItem.id} ${stockItem.description}`.toLowerCase().includes(stockSearch.toLowerCase())
-  );
-
   return (
     <div className="items-list">
       <div className="section-title"><h2>Stock Items</h2></div>
-      <label className="equipment-search">Search Equipment
-        <input placeholder="Search by item ID or description" value={stockSearch} onChange={(event) => setStockSearch(event.target.value)} />
-      </label>
       <div className="table-wrap engineer-items-table">
         <table>
           <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost</th><th>Action</th></tr></thead>
@@ -745,7 +755,17 @@ function EngineerItemEditor({ items, setItems }) {
                 <tr key={itemIndex}>
                   <td>{itemIndex + 1}</td>
                   <td><span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span></td>
-                  <td><select required value={item.name} onChange={(event) => updateDescription(itemIndex, event.target.value)}><option value="">Select equipment/material</option>{matchingStockItems.map((stockItem) => <option key={stockItem.id} value={stockItem.description}>{stockItem.description}</option>)}{item.name && !matchingStockItems.some((stockItem) => stockItem.description === item.name) && <option value={item.name}>{item.name}</option>}</select></td>
+                  <td>
+                    <input
+                      aria-label={`Search equipment for item ${itemIndex + 1}`}
+                      autoComplete="off"
+                      list="engineer-equipment-options"
+                      placeholder="Type to search equipment"
+                      required
+                      value={item.name}
+                      onChange={(event) => updateDescription(itemIndex, event.target.value)}
+                    />
+                  </td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
                   <td><input required min="0" type="number" value={item.unitCost || ""} onChange={(event) => updateUnitCost(itemIndex, event.target.value)} /></td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
@@ -754,6 +774,11 @@ function EngineerItemEditor({ items, setItems }) {
             })}
           </tbody>
         </table>
+        <datalist id="engineer-equipment-options">
+          {engineerStockItems.map((stockItem) => (
+            <option key={stockItem.id} value={stockItem.description}>{stockItem.id}</option>
+          ))}
+        </datalist>
         <div className="engineer-table-footer">
           <button type="button" className="btn secondary engineer-add-button" onClick={() => { setItems([...items, { ...emptyItem }]); setPage(Math.floor(items.length / pageSize)); }}>+ Add Item</button>
           <div className="engineer-pagination">
@@ -765,6 +790,28 @@ function EngineerItemEditor({ items, setItems }) {
       </div>
     </div>
   );
+}
+
+function EquipmentSearch({ value, onChange }) {
+  return (
+    <label className="equipment-search equipment-list-search">
+      Search Equipment
+      <input
+        aria-label="Search equipment list"
+        placeholder="Type item name, ID, serial number or purpose"
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function equipmentMatches(item, search) {
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+  return [item.name, item.itemId, item.serialNumber, item.purpose]
+    .some((value) => String(value || "").toLowerCase().includes(query));
 }
 
 function History({ doc }) {

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import Field from "../components/common/Field";
 import { api } from "../services/api";
 import { formatDate, money } from "../utils/formatters";
@@ -15,12 +15,18 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
 
 function ClientSummary({ user, summary, doc, showError }) {
   const items = summary.items || [];
+  const [equipmentSearch, setEquipmentSearch] = useState("");
   const customerName = summary.customerName || doc?.clientName || "";
   const printId = `client-summary-${summary.id}`;
   const subtotal = items.reduce((total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0), 0);
   const transportCost = Number(summary.transportCost || 0);
   const grandTotal = subtotal + transportCost;
   const currency = summary.currency || doc?.accounts?.currency || "TZS";
+  const visibleItems = items.filter((item) => {
+    const query = equipmentSearch.trim().toLowerCase();
+    return !query || [item.name, item.itemId, item.serialNumber, item.purpose]
+      .some((value) => String(value || "").toLowerCase().includes(query));
+  });
 
   async function download() {
     try {
@@ -73,11 +79,14 @@ function ClientSummary({ user, summary, doc, showError }) {
         <Field label="Contact" value={summary.customerContact || doc?.contact} />
       </div>
       <h3>Equipment/Accessories delivered</h3>
+      <label className="equipment-search equipment-list-search no-print">Search Equipment
+        <input aria-label="Search delivered equipment" placeholder="Type item name, ID, serial number or purpose" type="search" value={equipmentSearch} onChange={(event) => setEquipmentSearch(event.target.value)} />
+      </label>
       <div className="table-wrap">
         <table className="delivery-table">
           <thead><tr><th>No.</th><th>Item ID</th><th>Equipment/Accessory</th><th>Qty</th><th>Purpose</th><th>Cost</th><th>Total</th></tr></thead>
           <tbody>
-            {items.map((item, index) => (
+            {visibleItems.map((item, index) => (
               <tr key={index}>
                 <td>{index + 1}</td>
                 <td>{item.itemId || item.serialNumber || "-"}</td>
@@ -88,6 +97,7 @@ function ClientSummary({ user, summary, doc, showError }) {
                 <td>{money(Number(item.issuedQty || 0) * Number(item.unitCost || 0), currency)}</td>
               </tr>
             ))}
+            {!visibleItems.length && <tr><td className="empty" colSpan="7">No equipment matches “{equipmentSearch}”.</td></tr>}
             <tr><td colSpan="6"><strong>Sub Total:</strong></td><td>{money(subtotal, currency)}</td></tr>
             <tr><td colSpan="6"><strong>Transportation Cost:</strong></td><td>{money(transportCost, currency)}</td></tr>
             <tr><td colSpan="6"><strong>Grand Total Cost:</strong></td><td>{money(grandTotal, currency)}</td></tr>
