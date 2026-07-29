@@ -79,6 +79,7 @@ button {
   width: 150px;
   max-width: 50%;
   height: auto;
+  margin: 0 auto;
   object-fit: contain;
 }
 

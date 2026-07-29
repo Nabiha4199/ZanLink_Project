@@ -219,8 +219,6 @@ export default function LoginPage({ onLogin, showError }) {
     <main className="login-shell">
       <section className="login-panel">
         <img className="login-brand-logo" src={zanlinkLogo} alt="Zanlink" />
-        <h1>Zanlink Document Flow</h1>
-        <p>Sign in to manage customer onboarding, maintenance, stock, billing, and approvals.</p>
 
         {notice && <div className="auth-notice">{notice}</div>}
         {authError && <div className="auth-notice auth-error" role="alert">{authError}</div>}
