@@ -3,12 +3,20 @@ import { canCreate, statusClass } from "../utils/permissions";
 
 export default function DashboardPage({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance }) {
   const [workflowDoc, setWorkflowDoc] = useState(null);
+  const [statFilter, setStatFilter] = useState("all");
   const stats = useMemo(() => [
-    ["Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "IN"],
-    ["Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "RT"],
-    ["Completed", documents.filter((doc) => doc.status === "Completed").length, "OK"],
-    ["Total Visible", documents.length, "ALL"],
+    ["pending", "Pending Here", documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed").length, "⌛"],
+    ["returned", "Returned", documents.filter((doc) => doc.status.includes("Returned")).length, "↩"],
+    ["completed", "Completed", documents.filter((doc) => doc.status === "Completed").length, "✓"],
+    ["all", "Total Visible", documents.length, "▦"],
   ], [documents, user.department]);
+  const visibleDocuments = useMemo(() => {
+    if (statFilter === "pending") return documents.filter((doc) => doc.currentDepartment === user.department && doc.status !== "Completed");
+    if (statFilter === "returned") return documents.filter((doc) => doc.status.includes("Returned"));
+    if (statFilter === "completed") return documents.filter((doc) => doc.status === "Completed");
+    return documents;
+  }, [documents, statFilter, user.department]);
+  const activeStatLabel = stats.find(([key]) => key === statFilter)?.[1] || "Documents";
 
   return (
     <>
@@ -19,15 +27,25 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
           {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
         </div>
       </div>
-      <section className="stats dashboard-stats" data-tour="stats">{stats.map(([label, value, icon]) => <div className="stat" key={label}><span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b></div>)}</section>
+      <section className="stats dashboard-stats" data-tour="stats">{stats.map(([key, label, value, icon]) => (
+        <button
+          aria-pressed={statFilter === key}
+          className={statFilter === key ? "stat active" : "stat"}
+          key={key}
+          type="button"
+          onClick={() => setStatFilter(key)}
+        >
+          <span className="stat-icon" aria-hidden="true">{icon}</span><span>{label}</span><b>{value}</b>
+        </button>
+      ))}</section>
       <section className="panel filters" data-tour="documents">
-        <div className="filter-heading"><div><strong>Documents</strong><span>Find and process work assigned to your role</span></div></div>
+        <div className="filter-heading"><div><strong>{activeStatLabel}</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
         <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">Maintenance</option></select>
         <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
         <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
       </section>
-      <DocumentTable user={user} documents={documents} onOpen={onOpen} onShowWorkflow={setWorkflowDoc} />
+      <DocumentTable user={user} documents={visibleDocuments} onOpen={onOpen} onShowWorkflow={setWorkflowDoc} />
       {workflowDoc && <WorkflowModal doc={workflowDoc} onClose={() => setWorkflowDoc(null)} />}
     </>
   );
