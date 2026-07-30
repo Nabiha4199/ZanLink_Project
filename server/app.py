@@ -393,6 +393,17 @@ def require_text(payload: dict, field: str, label: str | None = None, max_length
     return value
 
 
+def normalize_tanzania_contact(value: str | None) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if digits.startswith("255"):
+        digits = digits[3:]
+    if digits.startswith("0"):
+        digits = digits[1:]
+    if not re.fullmatch(r"[67]\d{8}", digits):
+        raise ValueError("Enter a valid Tanzania contact number")
+    return f"+255 {digits[:3]} {digits[3:6]} {digits[6:]}"
+
+
 def optional_text(payload: dict, field: str, default: str = "", max_length: int = 500) -> str:
     value = str(payload.get(field, default) or "").strip()
     if len(value) > max_length:
@@ -1060,7 +1071,7 @@ def create_client():
     client = {
         "id": f"c-{uuid4()}",
         "name": require_text(payload, "name", "Client name"),
-        "contact": require_text(payload, "contact", "Contact number"),
+        "contact": normalize_tanzania_contact(payload.get("contact")),
         "email": email,
         "locations": cleaned_locations,
         "createdAt": now_iso(),

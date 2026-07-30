@@ -300,12 +300,20 @@ function FormShell({ title, subtitle, children, submitLabel, onSubmit, onCancel 
 function printElementById(printId) {
   const target = document.getElementById(printId);
   if (!target) return;
+  const printRoot = document.createElement("div");
+  printRoot.className = "print-root";
+  const printDocument = target.cloneNode(true);
+  printDocument.classList.remove("print-only-document");
+  printDocument.classList.add("print-root-document");
+  printRoot.appendChild(printDocument);
   const cleanup = () => {
     target.classList.remove("print-target");
+    printRoot.remove();
     document.body.classList.remove("printing-document");
   };
   document.body.classList.add("printing-document");
   target.classList.add("print-target");
+  document.body.appendChild(printRoot);
   window.addEventListener("afterprint", cleanup, { once: true });
   try {
     window.print();
@@ -547,7 +555,7 @@ function Doc1Actions({ user, doc, run }) {
     requestedTime: doc.sales?.requestedTime || new Date().toTimeString().slice(0, 5),
     currency: doc.sales?.currency || "TZS",
   });
-  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
+  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   const engineerEquipment = doc.store?.items || [];
   const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
@@ -583,19 +591,18 @@ function Doc1Actions({ user, doc, run }) {
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
-            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
               <ActionPanel title="Store Section" enabled={storeOpen} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
-                <div className="button-row no-print">
-                  <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
-                  <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
-                </div>
                 <OnboardingPreview doc={doc} printId={storeOnboardingPrintId} extraClass="print-only-document" />
                 <StockRequisitionPreview doc={{ ...doc, store: { ...doc.store, items } }} printId={storeStockPrintId} extraClass="print-only-document" />
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
-                {!storeManager && <div className="form-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label></div>}
+                {!storeManager && <div className="form-grid store-remarks-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label><div className="store-print-actions no-print">
+                  <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
+                  <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
+                </div></div>}
               </ActionPanel>
               {!storeManager && (
                 <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
@@ -615,22 +622,24 @@ function MaintenanceActions({ user, doc, run }) {
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const accountsOnly = user.role === "Accounts";
   const [hodRemarks, setHodRemarks] = useState(doc.hod?.remarks || "");
-  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "", billInUsd: doc.accounts?.billInUsd || false });
+  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   const hodPrintId = `hod-maintenance-print-${doc.id}`;
   return (
     <>
       <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
       {!accountsOnly && (
         <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
-          <div className="button-row no-print">
-            <button className="btn secondary" type="button" onClick={() => printElementById(hodPrintId)}>Print Maintenance Doc</button>
-          </div>
           <MaintenanceDocumentPreview doc={{ ...doc, hod: { ...doc.hod, remarks: hodRemarks } }} printId={hodPrintId} extraClass="print-only-document" />
-          <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
+          <div className="hod-notes-area">
+            <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
+            <div className="section-print-actions no-print">
+              <button className="btn secondary" type="button" onClick={() => printElementById(hodPrintId)}>Print Maintenance Doc</button>
+            </div>
+          </div>
         </ActionPanel>
       )}
       <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Maintenance completed.")}>
-        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="checkbox-field"><input type="checkbox" disabled={!accountsOpen} checked={accounts.billInUsd} onChange={(event) => setAccounts({ ...accounts, billInUsd: event.target.checked })} /> Bill in $ (USD)</label><label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
       </ActionPanel>
     </>
   );
