@@ -8,7 +8,63 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
   return (
     <>
       <style>{`
+        .client-delivery .summary-meta-table {
+          width: 100%;
+          min-width: 0;
+          border-collapse: collapse;
+          margin: 0 0 0.6rem;
+          table-layout: fixed;
+        }
+
+        .client-delivery .summary-meta-table th,
+        .client-delivery .summary-meta-table td {
+          border: 1px solid #7b8490;
+          padding: 6px 8px;
+          vertical-align: top;
+          word-break: break-word;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          text-align: left;
+        }
+
+        .client-delivery .summary-meta-table th {
+          width: 20%;
+          background: #d2d9e2;
+          color: #1f2937;
+          font-weight: 700;
+        }
+
+        .client-delivery .summary-meta-table td {
+          width: 30%;
+        }
+
+        .client-delivery .delivery-table {
+          width: 100%;
+          min-width: 0;
+          font-size: 14px;
+          line-height: 1.25;
+        }
+
+        .client-delivery .delivery-table th,
+        .client-delivery .delivery-table td {
+          border: 1px solid #7b8490;
+          padding: 4px 6px;
+        }
+
+        .client-delivery .delivery-table th {
+          background: #d2d9e2;
+          color: #1f2937;
+          font-weight: 700;
+        }
+
         @media print {
+          .client-delivery .table-wrap {
+            overflow: hidden;
+            padding: 0;
+            border: 0;
+            box-shadow: none;
+          }
+
           .client-delivery .summary-top-meta {
             display: flex;
             gap: 1rem;
@@ -27,8 +83,9 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
 
           .client-delivery .summary-meta-table {
             width: 100%;
+            min-width: 0;
             border-collapse: collapse;
-            margin-bottom: 0.5rem;
+            margin: 0 0 0.5rem;
             table-layout: fixed;
           }
 
@@ -43,11 +100,12 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
           }
 
           .client-delivery .summary-meta-table th {
-            font-weight: 700;
             text-align: left;
             font-size: 9pt;
             width: 20%;
-            background: #f7f7f7;
+            background: #c3ccd7;
+            color: #111827;
+            font-weight: 700;
           }
 
           .client-delivery .summary-meta-table td {
@@ -84,13 +142,22 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
 
           .client-delivery .delivery-table {
             width: 100%;
-            font-size: 12pt;
+            min-width: 0;
+            font-size: 10pt;
+            line-height: 1.2;
           }
 
           .client-delivery .delivery-table th,
           .client-delivery .delivery-table td {
-            padding: 8px 10px;
-            white-space: nowrap;
+            padding: 5px 6px;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .client-delivery .delivery-table th {
+            background: #c3ccd7;
+            color: #111827;
+            font-weight: 700;
           }
         }
       `}</style>
