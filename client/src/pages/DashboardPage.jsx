@@ -112,9 +112,10 @@ function WorkflowTracker({ type, status }) {
   ];
   const currentIndex = Math.max(1, stages.findIndex(([, pendingStatus]) => pendingStatus === status));
   return (
-    <div className="workflow-tracker"><strong>Workflow Progress</strong>{stages.map(([label], index) => {
+    <div className="workflow-tracker"><strong>Workflow Progress</strong><div className="workflow-stages" role="list">{stages.map(([label], index) => {
       const state = status === "Completed" || index < currentIndex ? "Completed" : index === currentIndex ? "Pending" : "Not Started";
-      return <div className={`workflow-step ${state.toLowerCase().replace(" ", "-")}`} key={label}><span>{state === "Completed" ? "OK" : state === "Pending" ? "..." : "--"}</span><b>{label}</b><small>{state}</small></div>;
-    })}</div>
+      const icon = state === "Completed" ? "✓" : state === "Pending" ? "◷" : "○";
+      return <div className={`workflow-step ${state.toLowerCase().replace(" ", "-")}`} key={label} role="listitem"><span className="workflow-icon" aria-hidden="true">{icon}</span><b>{label}</b><small>{state}</small></div>;
+    })}</div></div>
   );
 }

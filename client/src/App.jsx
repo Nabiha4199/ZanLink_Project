@@ -317,7 +317,7 @@ function printElementById(printId) {
 
 function DocumentDetail({ user, doc, onBack, run }) {
   const managementReview = doc.type === "doc1" && user.role !== "System Admin" && (user.role === "Management" || user.department === "Management");
-  const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || doc.workflowCompletedAt) && (user.role === "Engineer" || user.role === "System Admin");
+  const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || (doc.workflowCompletedAt && user.role === "Engineer")) && (user.role === "Engineer" || user.role === "System Admin");
   const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
   return (
     <>

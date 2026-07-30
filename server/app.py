@@ -48,18 +48,16 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
 
 
 USERS = [
-    {"id": "u1", "name": "Engineer Team", "username": "engineer", "email": "engineer@iitmz.ac.in", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
-    {"id": "u2", "name": "Sales Team", "username": "sales", "email": "sales@iitmz.ac.in", "password": "demo1234", "role": "Sales", "department": "Sales"},
+
     {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
     {"id": "u4", "name": "System Admin", "username": "admin", "email": "admin@iitmz.ac.in", "password": "demo1234", "role": "System Admin", "department": "Management"},
     {"id": "u8", "name": "Abdallah", "username": "abdallah", "email": "zda23b014@iitmz.ac.in", "role": "System Admin", "department": "Management"},
-    {"id": "u5", "name": "Store Team", "username": "store", "email": "store@iitmz.ac.in", "password": "demo1234", "role": "Store", "department": "Store"},
-    {"id": "u6", "name": "Head of Department", "username": "hod", "email": "hod@iitmz.ac.in", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
-    {"id": "u7", "name": "Management Team", "username": "management", "email": "management@iitmz.ac.in", "password": "demo1234", "role": "Management", "department": "Management"},
+
 ]
 
 REGISTERABLE_ROLES = {
@@ -187,6 +185,13 @@ def normalize_email(value: str | None) -> str:
     if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
         raise ValueError("Enter a valid email address")
     return email
+
+
+def require_username(value: str | None) -> str:
+    username = normalize_username(value)
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise ValueError("Username must be 3–40 characters and use only letters, numbers, dots, hyphens, or underscores")
+    return username
 
 
 def require_password(payload: dict, field: str = "password") -> str:
@@ -1067,20 +1072,19 @@ def create_client():
 @app.post("/api/login")
 def login():
     payload = request.get_json(force=True)
-    email = require_allowed_email(payload.get("email"), "sign in")
-    selected_role = str(payload.get("role") or "").strip()
-    if not selected_role:
-        raise ValueError("Please select your role")
-    existing_user = next((item for item in USERS if item.get("email") == email), None)
+    identifier = normalize_username(payload.get("identifier") or payload.get("email"))
+    if not identifier:
+        raise ValueError("Enter your username or email")
+    if "@" in identifier:
+        identifier = require_allowed_email(identifier, "sign in")
+    existing_user = next((item for item in USERS if item.get("email") == identifier or item.get("username") == identifier), None)
     if existing_user and not existing_user.get("active", True):
         return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if existing_user and not existing_user.get("password"):
         return jsonify({"error": "This account uses Google sign-in. Use Sign in with Google or reset your password first."}), 401
-    user = next((item for item in USERS if item.get("email") == email and item.get("password") == payload.get("password")), None)
+    user = next((item for item in USERS if (item.get("email") == identifier or item.get("username") == identifier) and item.get("password") == payload.get("password")), None)
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
-    if not user_has_role(user, selected_role):
-        return jsonify({"error": "The selected role does not match this account"}), 403
     return jsonify(public_user(user))
 
 
@@ -1156,10 +1160,13 @@ def register():
         if existing_user.get("pendingApproval", False):
             return jsonify({"error": "This account is already waiting for System Admin approval."}), 409
         return jsonify({"error": "An account already exists with this email address."}), 409
+    username = require_username(payload.get("username"))
+    if any(user.get("username") == username for user in USERS):
+        return jsonify({"error": "This username is already in use."}), 409
     user = {
         "id": f"u-{uuid4()}",
         "name": require_text(payload, "name", "Full name"),
-        "username": available_username(email),
+        "username": username,
         "email": email,
         "password": require_password(payload),
         "role": "Pending Approval",

@@ -121,9 +121,8 @@ const demoUsers = [
 export default function LoginPage({ onLogin, showError }) {
   const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
   const [mode, setMode] = useState(resetToken ? "reset-password" : "login");
-  const [selectedRole, setSelectedRole] = useState("");
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
-  const [registerForm, setRegisterForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
+  const [registerForm, setRegisterForm] = useState({ name: "", username: "", email: "", password: "", confirmPassword: "" });
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotRole, setForgotRole] = useState("");
   const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
@@ -141,10 +140,6 @@ export default function LoginPage({ onLogin, showError }) {
     setAuthError(message);
   }
 
-  function selectRole(role) {
-    setSelectedRole(role);
-  }
-
   function switchMode(nextMode) {
     setMode(nextMode);
     setNotice("");
@@ -155,7 +150,7 @@ export default function LoginPage({ onLogin, showError }) {
     event.preventDefault();
     setAuthError("");
     try {
-      onLogin(await api.login({ ...loginForm, role: selectedRole }));
+      onLogin(await api.login(loginForm));
     } catch (error) {
       reportAuthError(error);
     }
@@ -171,7 +166,7 @@ export default function LoginPage({ onLogin, showError }) {
       const response = await api.register(registerForm);
       setNotice(response.message);
       setAuthError("");
-      setRegisterForm({ name: "", email: "", password: "", confirmPassword: "" });
+      setRegisterForm({ name: "", username: "", email: "", password: "", confirmPassword: "" });
       setMode("login");
     } catch (error) {
       reportAuthError(error);
@@ -220,16 +215,8 @@ export default function LoginPage({ onLogin, showError }) {
 
         {mode === "login" && (
           <>
-            <div className="role-step">
-              <label htmlFor="role">Select role
-                <select id="role" value={selectedRole} onChange={(event) => selectRole(event.target.value)}>
-                  <option value="" disabled>Choose your role</option>
-                  {demoUsers.map(([role, label]) => <option value={role} key={role}>{label}</option>)}
-                </select>
-              </label>
-            </div>
             <form className="login-form" onSubmit={submitLogin}>
-              <label>Email<input autoComplete="email" required type="email" value={loginForm.email} onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })} /></label>
+              <label>Username or email<input autoComplete="username" required value={loginForm.identifier} onChange={(event) => setLoginForm({ ...loginForm, identifier: event.target.value })} /></label>
               <PasswordField label="Password" autoComplete="current-password" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
               <button className="btn">Sign in</button>
             </form>
@@ -246,6 +233,7 @@ export default function LoginPage({ onLogin, showError }) {
         {mode === "register" && (
           <form className="login-form" onSubmit={submitRegister}>
             <label>Full name<input autoComplete="name" required value={registerForm.name} onChange={(event) => setRegisterForm({ ...registerForm, name: event.target.value })} /></label>
+            <label>Username<input autoComplete="username" required minLength="3" maxLength="40" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" value={registerForm.username} onChange={(event) => setRegisterForm({ ...registerForm, username: event.target.value })} /><small>Use 3–40 letters, numbers, dots, hyphens, or underscores.</small></label>
             <label>Email<input autoComplete="email" required type="email" value={registerForm.email} onChange={(event) => setRegisterForm({ ...registerForm, email: event.target.value })} /></label>
             <p className="form-helper">A System Admin will select your role and approve access before you can sign in.</p>
             <PasswordField label="Password" autoComplete="new-password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} helper="Use at least 8 characters." />
