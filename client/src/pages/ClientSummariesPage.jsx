@@ -38,21 +38,48 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
             padding: 4px 6px;
             vertical-align: top;
             word-break: break-word;
+            white-space: normal;
+            overflow-wrap: anywhere;
           }
 
           .client-delivery .summary-meta-table th {
             font-weight: 700;
-            text-align: center;
+            text-align: left;
             font-size: 9pt;
+            width: 20%;
+            background: #f7f7f7;
           }
 
           .client-delivery .summary-meta-table td {
-            text-align: center;
+            text-align: left;
             font-size: 9pt;
+            width: 30%;
           }
 
-          .client-delivery .summary-meta-table .contact-col {
-            display: none;
+          .client-delivery .signature-pair {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 0.8rem;
+          }
+
+          .client-delivery .signature-pair .signature-field {
+            border-bottom: 1px solid #000;
+            padding-bottom: 0.55rem;
+          }
+
+          .client-delivery .signature-pair .signature-field.full-width {
+            grid-column: 1 / -1;
+          }
+
+          .client-delivery .signature-pair .field-label {
+            font-weight: 700;
+            font-size: 9pt;
+            margin-bottom: 0.2rem;
+          }
+
+          .client-delivery .signature-pair .field-value {
+            font-size: 9pt;
           }
 
           .client-delivery .delivery-table {
@@ -175,17 +202,19 @@ function ClientSummary({ user, summary, doc, showError }) {
         <tbody>
           <tr>
             <th>Customer</th>
+            <td>{customerName}</td>
             <th>Location</th>
-            <th>Invoice Number</th>
-            <th>Accounts Billing Amount</th>
-            <th className="contact-col">Contact</th>
+            <td>{summary.customerLocation || doc?.location}</td>
           </tr>
           <tr>
-            <td>{customerName}</td>
-            <td>{summary.customerLocation || doc?.location}</td>
+            <th>Invoice Number</th>
             <td>{summary.invoiceNumber || doc?.accounts?.invoiceNumber}</td>
+            <th>Accounts Billing Amount</th>
             <td>{money(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0, currency)}</td>
-            <td className="contact-col">{summary.customerContact || doc?.contact}</td>
+          </tr>
+          <tr>
+            <th>Contact</th>
+            <td colSpan="3">{summary.customerContact || doc?.contact || "-"}</td>
           </tr>
         </tbody>
       </table>
@@ -267,19 +296,19 @@ function ClientSummary({ user, summary, doc, showError }) {
       </section>
 
       <div className="signature-pair">
-        <div className="field">
+        <div className="field signature-field">
           <div className="field-label">Name of Customer</div>
           <div className="field-value">{customerName}</div>
         </div>
 
-        <div className="field">
-          <div className="field-label">Contact</div>
-          <div className="field-value">{summary.customerContact || doc?.contact || "-"}</div>
-        </div>
-
-        <div className="field">
+        <div className="field signature-field">
           <div className="field-label">Name of ZANLINK Staff</div>
           <div className="field-value">{summary.zanlinkStaff}</div>
+        </div>
+
+        <div className="field signature-field full-width">
+          <div className="field-label">Contact</div>
+          <div className="field-value">{summary.customerContact || doc?.contact || "-"}</div>
         </div>
       </div>
 
