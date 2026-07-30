@@ -17,6 +17,65 @@
   width: 64px;
 }
 
+.items-list .item-row {
+  grid-template-columns: minmax(220px, 1.4fr) minmax(100px, 0.45fr) minmax(150px, 0.7fr) minmax(170px, 0.75fr);
+}
+
+.auto-total {
+  display: grid;
+  align-content: center;
+  min-height: 46px;
+  padding: 8px 13px;
+  border: 1px solid #b8d9eb;
+  border-radius: 6px;
+  background: #f1f9fd;
+}
+
+.auto-total span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auto-total strong {
+  color: var(--brand-strong);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-total small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.auto-total.compact {
+  min-height: 42px;
+}
+
+.equipment-total-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;
+  padding: 12px 14px;
+  border-top: 2px solid var(--brand);
+  background: #f1f9fd;
+  color: var(--brand-strong);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .items-list .item-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .engineer-add-item,
 .engineer-table-footer {
   display: flex;
@@ -952,26 +1011,31 @@
 
 .stock-items-table th:nth-child(1),
 .stock-items-table td:nth-child(1) {
-  width: 27%;
+  width: 24%;
 }
 
 .stock-items-table th:nth-child(2),
 .stock-items-table td:nth-child(2),
 .stock-items-table th:nth-child(3),
-.stock-items-table td:nth-child(3),
-.stock-items-table th:nth-child(6),
-.stock-items-table td:nth-child(6) {
-  width: 12%;
+.stock-items-table td:nth-child(3) {
+  width: 10%;
 }
 
 .stock-items-table th:nth-child(4),
 .stock-items-table td:nth-child(4) {
-  width: 16%;
+  width: 14%;
 }
 
 .stock-items-table th:nth-child(5),
 .stock-items-table td:nth-child(5) {
-  width: 21%;
+  width: 18%;
+}
+
+.stock-items-table th:nth-child(6),
+.stock-items-table td:nth-child(6),
+.stock-items-table th:nth-child(7),
+.stock-items-table td:nth-child(7) {
+  width: 12%;
 }
 
 .readonly-value {
@@ -1382,6 +1446,11 @@
     break-after: auto;
     page-break-before: auto;
     page-break-after: auto;
+  }
+
+  body.printing-document .print-root .print-root-document:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
   }
 
   body.printing-summary .app-shell,

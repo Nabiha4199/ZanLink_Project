@@ -649,12 +649,24 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     draw_label_value(pdf, "Service", doc["service"], 143 * mm, y, 45 * mm)
     draw_label_value(pdf, "Contact", doc["contact"], 22 * mm, y - 18 * mm, 56 * mm)
     currency = doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS"
+    equipment_cost = float(doc.get("sales", {}).get("packageCost") or 0)
+    one_time_total = float(doc.get("sales", {}).get("oneTimeTotal") or 0) or (
+        float(doc.get("sales", {}).get("amount") or 0)
+        + equipment_cost
+        + float(doc.get("sales", {}).get("additionalNpr") or 0)
+    )
+    grand_total = float(doc.get("sales", {}).get("grandTotal") or 0) or (
+        one_time_total + float(doc.get("sales", {}).get("mbr") or 0)
+    )
     draw_label_value(pdf, "Installation Cost", money_text(doc.get("sales", {}).get("amount"), doc.get("sales", {}).get("currency") or "TZS"), 85 * mm, y - 18 * mm, 52 * mm)
     draw_label_value(pdf, "MBR", money_text(doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount")), currency), 143 * mm, y - 18 * mm, 45 * mm)
     draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
     draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
+    draw_label_value(pdf, "Equipment Cost", money_text(equipment_cost, currency), 22 * mm, y - 54 * mm, 56 * mm)
+    draw_label_value(pdf, "One-time Total", money_text(one_time_total, currency), 85 * mm, y - 54 * mm, 52 * mm)
+    draw_label_value(pdf, "First Invoice Total", money_text(grand_total, currency), 143 * mm, y - 54 * mm, 45 * mm)
 
-    y -= 66 * mm
+    y -= 84 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Engineering Confirmation")
     draw_label_value(pdf, "Stock Requisition No.", doc["number"], 22 * mm, y - 4, 56 * mm)
@@ -1329,6 +1341,11 @@ def sales_submit(document_id: str):
         store_item["costCurrency"] = currency
         sales_item["costCurrency"] = currency
     package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
+    installation_cost = require_number(payload, "amount", "Installation cost", minimum=0, allow_zero=False)
+    additional_npr = require_number(payload, "additionalNpr", "Additional NPR", minimum=0)
+    mbr = require_number(payload, "mbr", "MBR", minimum=0)
+    one_time_total = installation_cost + package_cost + additional_npr
+    grand_total = one_time_total + mbr
     submitted_at = datetime.now(timezone.utc)
     doc["clientName"] = client_name
     doc["location"] = location
@@ -1337,11 +1354,13 @@ def sales_submit(document_id: str):
         "clientName": client_name,
         "location": location,
         "surveyFormNo": require_text(payload, "surveyFormNo", "Survey form number"),
-        "amount": require_number(payload, "amount", "Sales total amount", minimum=0, allow_zero=False),
+        "amount": installation_cost,
         "packageCost": package_cost,
-        "additionalNpr": require_number(payload, "additionalNpr", "Additional NPR", minimum=0),
+        "additionalNpr": additional_npr,
+        "oneTimeTotal": one_time_total,
+        "grandTotal": grand_total,
         "subscription": subscription,
-        "mbr": require_number(payload, "mbr", "MBR", minimum=0),
+        "mbr": mbr,
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
         "requestedDate": submitted_at.date().isoformat(),
         "requestedTime": submitted_at.strftime("%H:%M"),
@@ -1367,8 +1386,13 @@ def accounts_submit(document_id: str):
     else:
         require_status(doc, "Pending Accounts")
     payload = request.get_json(force=True)
+    billing_amount = (
+        require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=True)
+        if doc["type"] == "maintenance"
+        else float(doc.get("sales", {}).get("grandTotal") or doc.get("sales", {}).get("amount") or 0)
+    )
     doc["accounts"] = {
-        "billingAmount": require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=doc["type"] == "maintenance"),
+        "billingAmount": billing_amount,
         "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
         "remarks": require_text(payload, "remarks", "Remarks", max_length=500),
         "billInUsd": bool(payload.get("billInUsd")),
@@ -1422,7 +1446,8 @@ def store_submit(document_id: str):
         if issued_qty > float(item.get("requestedQty") or 0):
             raise ValueError(f"Equipment {index} issued quantity cannot exceed requested quantity")
         item["issuedQty"] = issued_qty
-    matches = float(doc.get("sales", {}).get("amount") or 0) == float(doc.get("accounts", {}).get("billingAmount") or 0)
+    expected_total = float(doc.get("sales", {}).get("grandTotal") or doc.get("sales", {}).get("amount") or 0)
+    matches = expected_total == float(doc.get("accounts", {}).get("billingAmount") or 0)
     doc["store"] = {
         "confirmed": matches,
         "amountMatches": matches,

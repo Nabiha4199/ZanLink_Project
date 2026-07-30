@@ -298,21 +298,25 @@ function FormShell({ title, subtitle, children, submitLabel, onSubmit, onCancel 
 }
 
 function printElementById(printId) {
-  const target = document.getElementById(printId);
-  if (!target) return;
+  printElementsByIds([printId]);
+}
+
+function printElementsByIds(printIds) {
+  const targets = printIds.map((printId) => document.getElementById(printId)).filter(Boolean);
+  if (!targets.length) return;
   const printRoot = document.createElement("div");
   printRoot.className = "print-root";
-  const printDocument = target.cloneNode(true);
-  printDocument.classList.remove("print-only-document");
-  printDocument.classList.add("print-root-document");
-  printRoot.appendChild(printDocument);
+  targets.forEach((target) => {
+    const printDocument = target.cloneNode(true);
+    printDocument.classList.remove("print-only-document");
+    printDocument.classList.add("print-root-document");
+    printRoot.appendChild(printDocument);
+  });
   const cleanup = () => {
-    target.classList.remove("print-target");
     printRoot.remove();
     document.body.classList.remove("printing-document");
   };
   document.body.classList.add("printing-document");
-  target.classList.add("print-target");
   document.body.appendChild(printRoot);
   window.addEventListener("afterprint", cleanup, { once: true });
   try {
@@ -420,6 +424,7 @@ function CompletedEngineerDocuments({ user, doc }) {
           <button className="btn secondary" onClick={() => download("stock-requisition", `${doc.clientName}_stock_requisition.pdf`)}>Download Stock Requisition PDF</button>
           <button className="btn secondary" onClick={() => printElementById(onboardingPrintId)}>Print Onboarding Doc</button>
           <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Doc</button>
+          <button className="btn" onClick={() => printElementsByIds([onboardingPrintId, stockPrintId])}>Print All</button>
         </div>
       </div>
       <div className="document-preview-grid">
@@ -431,6 +436,11 @@ function CompletedEngineerDocuments({ user, doc }) {
 }
 
 function OnboardingPreview({ doc, printId, extraClass = "" }) {
+  const equipmentCost = Number(doc.sales?.packageCost || 0);
+  const oneTimeTotal = doc.sales?.oneTimeTotal ?? (
+    Number(doc.sales?.amount || 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
+  );
+  const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mbr || 0));
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head"><span className="paper-logo">zanlink</span><h2>Customer Onboarding Form</h2><span>Form No. {doc.number}</span></header>
@@ -446,9 +456,12 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
         <Field label="Client Name" value={doc.clientName} />
         <Field label="Location" value={doc.location} />
         <Field label="Installation Cost" value={money(doc.sales?.amount, doc.sales?.currency)} />
-        <Field label="Equipment Cost" value={money(doc.sales?.packageCost, doc.accounts?.currency || doc.sales?.currency)} />
+        <Field label="Equipment Cost" value={money(equipmentCost, doc.accounts?.currency || doc.sales?.currency)} />
+        <Field label="Additional NPR" value={money(doc.sales?.additionalNpr, doc.sales?.currency)} />
+        <Field label="Total One-time Cost" value={money(oneTimeTotal, doc.sales?.currency)} />
         <Field label="Subscription package" value={doc.sales?.subscription || doc.sales?.remarks || doc.service} />
-        <Field label="MBR" value={money(doc.sales?.mbr || doc.accounts?.billingAmount, doc.accounts?.currency || doc.sales?.currency)} />
+        <Field label="MBR" value={money(doc.sales?.mbr ?? 0, doc.accounts?.currency || doc.sales?.currency)} />
+        <Field label="First Invoice Total" value={money(firstInvoiceTotal, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
         <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
       </div>
@@ -549,7 +562,7 @@ function Doc1Actions({ user, doc, run }) {
     packageCost: doc.sales?.packageCost || "",
     additionalNpr: doc.sales?.additionalNpr || "",
     subscription: doc.sales?.subscription || doc.sales?.remarks || doc.service || "",
-    mbr: doc.sales?.mbr || doc.accounts?.billingAmount || "",
+    mbr: doc.sales?.mbr || "",
     requestedBy: doc.sales?.requestedBy || user.name || "",
     requestedDate: doc.sales?.requestedDate || new Date().toISOString().slice(0, 10),
     requestedTime: doc.sales?.requestedTime || new Date().toTimeString().slice(0, 5),
@@ -559,6 +572,8 @@ function Doc1Actions({ user, doc, run }) {
   const engineerEquipment = doc.store?.items || [];
   const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
+  const oneTimeTotal = Number(sales.amount || 0) + equipmentTotal + Number(sales.additionalNpr || 0);
+  const grandTotal = oneTimeTotal + Number(sales.mbr || 0);
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
     ...item,
     issuedQty: storeOpen && Number(item.issuedQty || 0) === 0 ? Number(item.requestedQty || 0) : Number(item.issuedQty || 0),
@@ -570,7 +585,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, equipment: salesEquipment }), "Moved to Accounts.")}>
+      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -578,10 +593,12 @@ function Doc1Actions({ user, doc, run }) {
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
           <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
           {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
-          <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
+          <AutoTotal label="Equipment Cost" value={equipmentTotal} currency={sales.currency} />
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
+          <AutoTotal label="Total One-time Cost" value={oneTimeTotal} currency={sales.currency} />
           {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
           {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
+          <AutoTotal label="First Invoice Total" value={grandTotal} currency={sales.currency} />
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
           <label>Time<input type="time" readOnly value={sales.requestedTime} /></label>
@@ -590,8 +607,8 @@ function Doc1Actions({ user, doc, run }) {
       </ActionPanel>
       {!salesOnly && (
         <>
-          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
-            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, { ...accounts, billingAmount: doc.sales?.grandTotal || doc.sales?.amount || 0 }), "Moved to Store.")}>
+            <div className="form-grid"><AutoTotal label="Billing Amount" value={doc.sales?.grandTotal || doc.sales?.amount || 0} currency={doc.sales?.currency} />{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
@@ -602,6 +619,7 @@ function Doc1Actions({ user, doc, run }) {
                 {!storeManager && <div className="form-grid store-remarks-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label><div className="store-print-actions no-print">
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
+                  <button className="btn" type="button" onClick={() => printElementsByIds([storeOnboardingPrintId, storeStockPrintId])}>Print All</button>
                 </div></div>}
               </ActionPanel>
               {!storeManager && (
@@ -656,6 +674,7 @@ function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
 }
 
 function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS" }) {
+  const total = items.reduce((sum, item) => sum + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
   function update(index, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, unitCost: Number(value) } : item));
   }
@@ -668,8 +687,10 @@ function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS"
           <label>Item<input disabled value={item.name || ""} readOnly /></label>
           <label>Req. Qty<span className="readonly-value">{item.requestedQty || 1}</span></label>
           <label>Unit Cost ({currency})<input required min="0" type="number" disabled={locked} value={item.unitCost || ""} onChange={(event) => update(index, event.target.value)} /></label>
+          <AutoTotal label="Line Total" value={Number(item.requestedQty || 0) * Number(item.unitCost || 0)} currency={currency} compact />
         </div>
       ))}
+      <div className="equipment-total-bar"><strong>Equipment Total</strong><span>{money(total, currency)}</span></div>
     </div>
   );
 }
@@ -735,7 +756,7 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
       <div className="section-title"><h2>{title}</h2>{!locked && requestMode && <button type="button" className="btn secondary" onClick={() => setItems([...items, { ...emptyItem }])}>{addLabel}</button>}</div>
       <div className="table-wrap">
         <table className="stock-items-table">
-          <thead><tr><th>Description</th><th>Requested Qty</th><th>Issued Qty</th><th>Item ID</th><th>Purpose</th><th>Unit Cost</th></tr></thead>
+          <thead><tr><th>Description</th><th>Requested Qty</th><th>Issued Qty</th><th>Item ID</th><th>Purpose</th><th>Unit Cost</th><th>Total</th></tr></thead>
           <tbody>
             {items.map((item, index) => (
               <tr key={index}>
@@ -745,9 +766,11 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
                 <td>{locked ? <span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span> : <input aria-label={`Item ID for item ${index + 1}`} value={item.itemId || ""} onChange={(e) => update(index, "itemId", e.target.value)} />}</td>
                 <td><input aria-label={`Purpose for item ${index + 1}`} disabled={locked} value={item.purpose} onChange={(e) => update(index, "purpose", e.target.value)} /></td>
                 <td><input aria-label={`Unit cost for item ${index + 1}`} min="0" type="number" disabled={locked || costLocked} value={item.unitCost} onChange={(e) => update(index, "unitCost", e.target.value)} /></td>
+                <td className="money-cell">{money(Number(item.requestedQty || 0) * Number(item.unitCost || 0), item.costCurrency || "TZS")}</td>
               </tr>
             ))}
           </tbody>
+          <tfoot><tr><td colSpan="6"><strong>Equipment Total</strong></td><td className="money-cell"><strong>{money(items.reduce((sum, item) => sum + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0), items[0]?.costCurrency || "TZS")}</strong></td></tr></tfoot>
         </table>
       </div>
     </div>
@@ -783,7 +806,7 @@ function EngineerItemEditor({ items, setItems }) {
       <div className="section-title"><h2>Stock Items</h2></div>
       <div className="table-wrap engineer-items-table">
         <table>
-          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost</th><th>Action</th></tr></thead>
+          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost</th><th>Total</th><th>Action</th></tr></thead>
           <tbody>
             {visibleItems.map((item, visibleIndex) => {
               const itemIndex = startIndex + visibleIndex;
@@ -804,11 +827,13 @@ function EngineerItemEditor({ items, setItems }) {
                   </td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
                   <td><input required min="0" type="number" value={item.unitCost || ""} onChange={(event) => updateUnitCost(itemIndex, event.target.value)} /></td>
+                  <td className="money-cell">{money(Number(item.requestedQty || 0) * Number(item.unitCost || 0), "TZS")}</td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
                 </tr>
               );
             })}
           </tbody>
+          <tfoot><tr><td colSpan="5"><strong>Equipment Total</strong></td><td className="money-cell"><strong>{money(items.reduce((sum, item) => sum + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0), "TZS")}</strong></td><td /></tr></tfoot>
         </table>
         <datalist id="engineer-equipment-options">
           {engineerStockItems.map((stockItem) => (
@@ -1064,6 +1089,16 @@ function textInput(label, key, form, setForm, disabled = false, required = true)
 
 function numberInput(label, key, form, setForm, disabled = false) {
   return <label>{label}<input type="number" min="0" disabled={disabled} required value={form[key] || ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>;
+}
+
+function AutoTotal({ label, value, currency = "TZS", compact = false }) {
+  return (
+    <div className={`auto-total${compact ? " compact" : ""}`}>
+      <span>{label}</span>
+      <strong>{money(Number(value || 0), currency || "TZS")}</strong>
+      {!compact && <small>Calculated automatically</small>}
+    </div>
+  );
 }
 
 export default App;
