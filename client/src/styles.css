@@ -873,13 +873,13 @@
   }
 
   .phone-input-wrap {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(88px, 0.34fr) minmax(0, 1fr);
   }
 
   .country-code-button {
     border-right: 1px solid var(--line);
-    border-bottom: 0;
-    border-radius: 6px 6px 0 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 6px 0 0 6px;
   }
 
   .country-code-menu {
@@ -888,7 +888,7 @@
   }
 
   .phone-input-wrap input {
-    border-radius: 0 0 6px 6px;
+    border-radius: 0 6px 6px 0;
   }
 
   .location-input-row {
@@ -1240,7 +1240,54 @@
   color: #7b8490;
 }
 
+.store-print-actions,
+.section-print-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -4px 0 18px;
+}
+
+.store-print-actions {
+  grid-column: 1 / -1;
+}
+
+.section-print-actions {
+  margin-top: 10px;
+}
+
+.store-print-actions .btn.secondary,
+.section-print-actions .btn.secondary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: white;
+}
+
+.store-print-actions .btn.secondary:hover,
+.section-print-actions .btn.secondary:hover {
+  background: var(--brand);
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .print-only-document {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 210mm;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.print-root {
   display: none;
 }
 
@@ -1290,34 +1337,35 @@
     min-height: auto;
   }
 
-  body.printing-document .app-shell,
-  body.printing-document .main,
-  body.printing-document .final-documents,
-  body.printing-document .document-preview-grid {
-    display: block;
+  body.printing-document .app-shell {
+    display: none !important;
+  }
+
+  body.printing-document .print-root {
+    display: block !important;
+    position: absolute;
+    inset: 0 auto auto 0;
     padding: 0;
     margin: 0;
     background: white;
   }
 
-  body.printing-document .main > *:not(.final-documents),
-  body.printing-document .panel,
-  body.printing-document .document-preview-grid > *:not(.print-target),
-  body.printing-document .paper-form:not(.print-target),
-  body.printing-document .summary-document:not(.print-target) {
-    display: none !important;
-  }
-
-  body.printing-document .print-only-document.print-target,
-  body.printing-document .paper-form.print-target,
-  body.printing-document .summary-document.print-target {
+  body.printing-document .print-root .print-root-document {
     display: block !important;
+    position: static;
+    height: auto;
+    overflow: visible;
+    pointer-events: auto;
     width: 100%;
     margin: 0;
     padding: 12mm;
     border: 0;
     border-radius: 0;
     box-shadow: none;
+    break-before: auto;
+    break-after: auto;
+    page-break-before: auto;
+    page-break-after: auto;
   }
 
   body.printing-summary .app-shell,

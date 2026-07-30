@@ -9,10 +9,10 @@ const PERIODS = [
 ];
 
 const METRICS = [
-  ["all", "No. of Requests", "totalRequests"],
-  ["approved", "No. of Approved Requests", "approvedRequests"],
-  ["pending", "No. of Pending Requests", "pendingRequests"],
-  ["successful", "No. of Successful Requests", "successfulRequests"],
+  ["all", "Request", "totalRequests"],
+  ["approved", "Approved Requests", "approvedRequests"],
+  ["pending", "Pending Requests", "pendingRequests"],
+  ["successful", "Successful Requests", "successfulRequests"],
 ];
 
 export default function ReportsPage({ reports }) {
@@ -73,19 +73,6 @@ export default function ReportsPage({ reports }) {
           <span>{rows.length} request{rows.length === 1 ? "" : "s"}</span>
         </div>
         <ReportTable rows={rows} mode={detailKey} />
-      </section>
-
-      <section className="panel">
-        <h2>Status Breakdown</h2>
-        <div className="table-wrap status-breakdown-wrap">
-          <table className="compact-table">
-            <tbody>
-              {Object.entries(reports.statusCounts).map(([status, count]) => (
-                <tr key={status}><td>{status}</td><td>{count}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
     </>
   );

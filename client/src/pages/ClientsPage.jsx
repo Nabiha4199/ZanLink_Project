@@ -248,11 +248,21 @@ export const countryCodes = [
 
 const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [] };
 
+function normalizeTanzaniaContact(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  let local = digits;
+  if (local.startsWith("255")) local = local.slice(3);
+  if (local.startsWith("0")) local = local.slice(1);
+  if (!/^[67]\d{8}$/.test(local)) return "";
+  return `+255 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+}
+
 export default function ClientsPage({ clients, onRegister }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const [contactError, setContactError] = useState("");
   const visible = clients.filter((client) =>
     `${client.name} ${client.contact} ${client.email} ${(client.locations || []).join(" ")}`
       .toLowerCase()
@@ -267,7 +277,12 @@ export default function ClientsPage({ clients, onRegister }) {
   function submit(event) {
     event.preventDefault();
     const selectedCountry = countryCodes.find(([iso]) => iso === form.countryIso) || countryCodes[0];
-    const contact = `${selectedCountry[2]} ${form.contact}`.trim();
+    const contact = selectedCountry[0] === "TZ" ? normalizeTanzaniaContact(form.contact) : `${selectedCountry[2]} ${form.contact}`.trim();
+    if (selectedCountry[0] === "TZ" && !contact) {
+      setContactError("Enter a valid Tanzania number, for example 0712 345 678.");
+      return;
+    }
+    setContactError("");
     onRegister({
       name: form.name,
       contact,
@@ -300,10 +315,17 @@ export default function ClientsPage({ clients, onRegister }) {
                 inputMode="tel"
                 placeholder="Phone number"
                 required
+                aria-invalid={!!contactError}
+                pattern={form.countryIso === "TZ" ? "^(?:\\+?255[\\s-]?|0)?[67][0-9]{2}[\\s-]?[0-9]{3}[\\s-]?[0-9]{3}$" : undefined}
+                title={form.countryIso === "TZ" ? "Enter a valid Tanzania number, for example 0712 345 678." : undefined}
                 value={form.contact}
-                onChange={(event) => setForm({ ...form, contact: event.target.value })}
+                onChange={(event) => {
+                  setContactError("");
+                  setForm({ ...form, contact: event.target.value });
+                }}
               />
             </div>
+            {contactError && <small className="field-error">{contactError}</small>}
           </label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
           <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} />
