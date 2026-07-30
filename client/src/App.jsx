@@ -887,10 +887,11 @@ function ClientFields({ clients, form, setForm }) {
         {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
       </label>
       <label>Location
-        <select required disabled={!selectedClient} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
-          <option value="">Select location</option>
+        <select required value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
+          <option value="">{selectedClient ? "Select location" : "Select a client first"}</option>
           {(selectedClient?.locations || []).map((location) => <option key={location}>{location}</option>)}
         </select>
+        {!selectedClient && <small className="field-guidance">Choose a registered client to load their service locations.</small>}
       </label>
       <label>Contact<input readOnly value={form.contact} /></label>
       <label>Email<input readOnly value={form.email} /></label>

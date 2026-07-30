@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { locationOptions } from "../config/workflow";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { searchTanzaniaLocations } from "../services/tanzaniaLocations";
 
 const countryCodes = [
   ["TZ", "Tanzania", "+255"],
@@ -387,18 +387,51 @@ function FlagImage({ iso, country }) {
 }
 
 function LocationPicker({ form, setForm, query, setQuery }) {
-  const normalizedQuery = query.trim().toLowerCase();
-  const exact = locationOptions.find((place) => place.name.toLowerCase() === normalizedQuery);
-  const directMatches = normalizedQuery
-    ? locationOptions.filter((place) => `${place.name} ${place.area}`.toLowerCase().includes(normalizedQuery))
-    : [];
-  const nearbyMatches = exact
-    ? locationOptions.filter((place) => place.area === exact.area && place.name !== exact.name)
-    : [];
-  const suggestions = [...directMatches, ...nearbyMatches]
-    .filter((place, index, all) => all.findIndex((item) => item.name === place.name) === index)
-    .filter((place) => !form.locations.includes(place.name))
-    .slice(0, 9);
+  const [suggestions, setSuggestions] = useState([]);
+  const [status, setStatus] = useState("idle");
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
+  const requestNumber = useRef(0);
+
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length < 2) {
+      setSuggestions([]);
+      setStatus("idle");
+      setActiveIndex(-1);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const currentRequest = ++requestNumber.current;
+    setStatus("loading");
+    setIsOpen(true);
+
+    const debounce = window.setTimeout(() => {
+      searchTanzaniaLocations(trimmedQuery, controller.signal)
+        .then((results) => {
+          if (currentRequest !== requestNumber.current) return;
+          const available = results.filter((place) =>
+            !form.locations.some((location) => location.toLowerCase() === place.label.toLowerCase())
+          );
+          setSuggestions(available);
+          setStatus(available.length ? "ready" : "empty");
+          setActiveIndex(available.length ? 0 : -1);
+        })
+        .catch((error) => {
+          if (error.name === "AbortError" || currentRequest !== requestNumber.current) return;
+          setSuggestions([]);
+          setStatus("error");
+          setActiveIndex(-1);
+        });
+    }, 450);
+
+    return () => {
+      window.clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [query, form.locations]);
 
   function addLocation(value) {
     const location = value.trim();
@@ -407,38 +440,79 @@ function LocationPicker({ form, setForm, query, setQuery }) {
       setForm({ ...form, locations: [...form.locations, location] });
     }
     setQuery("");
+    setSuggestions([]);
+    setIsOpen(false);
+    setStatus("idle");
   }
 
   return (
-    <div className="wide location-picker">
+    <div className="location-picker">
       <label>Location(s)
         <div className="location-input-row">
-          <input
-            aria-autocomplete="list"
-            autoComplete="off"
-            placeholder="Start typing, e.g. Mkunazini"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addLocation(suggestions[0]?.name || query);
-              }
-            }}
-          />
+          <div className="location-combobox">
+            <span className="location-search-icon" aria-hidden="true">⌕</span>
+            <input
+              aria-autocomplete="list"
+              aria-controls={listboxId}
+              aria-expanded={isOpen && query.trim().length >= 2}
+              aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
+              autoComplete="off"
+              role="combobox"
+              placeholder="Search any address or place in Tanzania"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onFocus={() => query.trim().length >= 2 && setIsOpen(true)}
+              onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" && suggestions.length) {
+                  event.preventDefault();
+                  setIsOpen(true);
+                  setActiveIndex((index) => (index + 1) % suggestions.length);
+                } else if (event.key === "ArrowUp" && suggestions.length) {
+                  event.preventDefault();
+                  setIsOpen(true);
+                  setActiveIndex((index) => (index <= 0 ? suggestions.length - 1 : index - 1));
+                } else if (event.key === "Escape") {
+                  setIsOpen(false);
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  addLocation(suggestions[activeIndex]?.label || query);
+                }
+              }}
+            />
+            {!!query && (
+              <button className="location-clear" aria-label="Clear location search" type="button" onClick={() => setQuery("")}>×</button>
+            )}
+            {isOpen && query.trim().length >= 2 && (
+              <div className="location-suggestions" id={listboxId} role="listbox">
+                {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Tanzania…</div>}
+                {status === "empty" && <div className="location-message">No matching place found. You can still add the address you typed.</div>}
+                {status === "error" && <div className="location-message">Suggestions are unavailable. You can still add the address you typed.</div>}
+                {suggestions.map((place, index) => (
+                  <button
+                    className={index === activeIndex ? "active" : ""}
+                    id={`${listboxId}-${index}`}
+                    key={place.id}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => addLocation(place.label)}
+                  >
+                    <span>{place.name}</span>
+                    <small>{place.label}</small>
+                  </button>
+                ))}
+                {(status === "ready" || status === "empty") && (
+                  <div className="location-attribution">Search results © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></div>
+                )}
+              </div>
+            )}
+          </div>
           <button className="btn secondary" type="button" onClick={() => addLocation(query)}>Add</button>
         </div>
       </label>
-      {!!suggestions.length && (
-        <div className="location-suggestions" role="listbox">
-          {exact && <strong>Nearby {exact.area}</strong>}
-          {suggestions.map((place) => (
-            <button key={place.name} type="button" role="option" onClick={() => addLocation(place.name)}>
-              <span>{place.name}</span><small>{place.area}</small>
-            </button>
-          ))}
-        </div>
-      )}
       {!!form.locations.length && (
         <div className="location-chips">
           {form.locations.map((location) => (
