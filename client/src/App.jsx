@@ -886,7 +886,7 @@ function ClientFields({ clients, form, setForm }) {
           value={form.location}
           onChange={(location) => setForm({ ...form, location })}
         />
-        {!selectedClient && <small className="field-guidance">Select a client, then search for any service location in Tanzania.</small>}
+        {!selectedClient && <small className="field-guidance">Select a client, then search for any service location in Zanzibar.</small>}
       </label>
       <label>Contact
         <div className="phone-input-wrap">
@@ -988,7 +988,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
         disabled={disabled}
         required
         role="combobox"
-        placeholder="Search any address or place in Tanzania"
+        placeholder="Search any address or place in Zanzibar"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onFocus={() => !disabled && value.trim().length >= 2 && setIsOpen(true)}
@@ -1015,7 +1015,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
       )}
       {!disabled && isOpen && value.trim().length >= 2 && (
         <div className="location-suggestions" id={listboxId} role="listbox">
-          {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Tanzania…</div>}
+          {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Zanzibar…</div>}
           {status === "empty" && <div className="location-message">No matching place found. You can still use the address you typed.</div>}
           {status === "error" && <div className="location-message">Suggestions are unavailable. You can still use the address you typed.</div>}
           {suggestions.map((place, index) => (

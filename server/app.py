@@ -1140,20 +1140,7 @@ def google_login():
     if user and not user.get("active", True):
         return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if not user:
-        user = {
-            "id": f"u-{uuid4()}",
-            "name": str(identity.get("name") or email.split("@", 1)[0])[:120],
-            "username": available_username(email),
-            "email": email,
-            "googleSub": google_sub,
-            "picture": str(identity.get("picture") or ""),
-            "role": "Pending Approval",
-            "department": "",
-            "active": False,
-            "pendingApproval": True,
-        }
-        USERS.append(user)
-        return jsonify({"error": "Your Google account has been submitted for System Admin approval. Please wait for approval, then continue with Google sign-in."}), 403
+        return jsonify({"error": "No account exists for this email address. Contact a System Admin to create one."}), 403
 
     user["googleSub"] = google_sub
     user["picture"] = str(identity.get("picture") or user.get("picture") or "")
@@ -1163,30 +1150,7 @@ def google_login():
 
 @app.post("/api/register")
 def register():
-    payload = request.get_json(force=True)
-    email = require_allowed_email(payload.get("email"), "register")
-
-    existing_user = next((user for user in USERS if user.get("email") == email), None)
-    if existing_user:
-        if existing_user.get("pendingApproval", False):
-            return jsonify({"error": "This account is already waiting for System Admin approval."}), 409
-        return jsonify({"error": "An account already exists with this email address."}), 409
-    username = require_username(payload.get("username"))
-    if any(user.get("username") == username for user in USERS):
-        return jsonify({"error": "This username is already in use."}), 409
-    user = {
-        "id": f"u-{uuid4()}",
-        "name": require_text(payload, "name", "Full name"),
-        "username": username,
-        "email": email,
-        "password": require_password(payload),
-        "role": "Pending Approval",
-        "department": "",
-        "active": False,
-        "pendingApproval": True,
-    }
-    USERS.append(user)
-    return jsonify({"message": "Your account is waiting for System Admin approval. You can sign in after an admin assigns your role and approves it."}), 202
+    return jsonify({"error": "Public account creation is disabled. Contact a System Admin."}), 403
 
 
 @app.post("/api/account/password")

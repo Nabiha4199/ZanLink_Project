@@ -122,7 +122,6 @@ export default function LoginPage({ onLogin, showError }) {
   const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
   const [mode, setMode] = useState(resetToken ? "reset-password" : "login");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
-  const [registerForm, setRegisterForm] = useState({ name: "", username: "", email: "", password: "", confirmPassword: "" });
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotRole, setForgotRole] = useState("");
   const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
@@ -151,23 +150,6 @@ export default function LoginPage({ onLogin, showError }) {
     setAuthError("");
     try {
       onLogin(await api.login(loginForm));
-    } catch (error) {
-      reportAuthError(error);
-    }
-  }
-
-  async function submitRegister(event) {
-    event.preventDefault();
-    if (registerForm.password !== registerForm.confirmPassword) {
-      reportAuthError(new Error("Passwords do not match"));
-      return;
-    }
-    try {
-      const response = await api.register(registerForm);
-      setNotice(response.message);
-      setAuthError("");
-      setRegisterForm({ name: "", username: "", email: "", password: "", confirmPassword: "" });
-      setMode("login");
     } catch (error) {
       reportAuthError(error);
     }
@@ -223,24 +205,10 @@ export default function LoginPage({ onLogin, showError }) {
             <div className="auth-divider"><span>or</span></div>
             <GoogleSignIn onLogin={onLogin} showError={reportAuthError} />
             <div className="auth-bottom-links">
-              <button type="button" onClick={() => switchMode("register")}>Don't have an account?</button>
               <button type="button" onClick={() => switchMode("forgot")}>Forgot password?</button>
             </div>
+            <p className="form-helper">Accounts are created by a System Admin.</p>
           </>
-        )}
-
-
-        {mode === "register" && (
-          <form className="login-form" onSubmit={submitRegister}>
-            <label>Full name<input autoComplete="name" required value={registerForm.name} onChange={(event) => setRegisterForm({ ...registerForm, name: event.target.value })} /></label>
-            <label>Username<input autoComplete="username" required minLength="3" maxLength="40" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" value={registerForm.username} onChange={(event) => setRegisterForm({ ...registerForm, username: event.target.value })} /><small>Use 3–40 letters, numbers, dots, hyphens, or underscores.</small></label>
-            <label>Email<input autoComplete="email" required type="email" value={registerForm.email} onChange={(event) => setRegisterForm({ ...registerForm, email: event.target.value })} /></label>
-            <p className="form-helper">A System Admin will select your role and approve access before you can sign in.</p>
-            <PasswordField label="Password" autoComplete="new-password" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} helper="Use at least 8 characters." />
-            <PasswordField label="Confirm password" autoComplete="new-password" value={registerForm.confirmPassword} onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })} />
-            <button className="btn">Create account</button>
-            <button type="button" className="auth-back-link" onClick={() => switchMode("login")}>Back to sign in</button>
-          </form>
         )}
 
         {mode === "forgot" && (

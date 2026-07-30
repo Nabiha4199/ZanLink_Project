@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { searchTanzaniaLocations } from "../services/tanzaniaLocations";
+import { reverseZanzibarLocation, searchTanzaniaLocations } from "../services/tanzaniaLocations";
 
 export const countryCodes = [
   ["TZ", "Tanzania", "+255"],
@@ -411,6 +411,8 @@ function FlagImage({ iso, country }) {
 function LocationPicker({ form, setForm, query, setQuery }) {
   const [suggestions, setSuggestions] = useState([]);
   const [status, setStatus] = useState("idle");
+  const [geolocationStatus, setGeolocationStatus] = useState("idle");
+  const [geolocationError, setGeolocationError] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
@@ -467,6 +469,36 @@ function LocationPicker({ form, setForm, query, setQuery }) {
     setStatus("idle");
   }
 
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setGeolocationError("This browser does not support geolocation.");
+      return;
+    }
+    setGeolocationStatus("loading");
+    setGeolocationError("");
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const place = await reverseZanzibarLocation(coords.latitude, coords.longitude);
+          addLocation(place.label);
+          setGeolocationStatus("success");
+        } catch (error) {
+          setGeolocationStatus("error");
+          setGeolocationError(error.message);
+        }
+      },
+      (error) => {
+        setGeolocationStatus("error");
+        setGeolocationError(
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was denied. Allow location access and try again."
+            : "Your current location could not be detected. Try again outdoors or enter it manually."
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }
+
   return (
     <div className="location-picker">
       <label>Location(s)
@@ -480,7 +512,7 @@ function LocationPicker({ form, setForm, query, setQuery }) {
               aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
               autoComplete="off"
               role="combobox"
-              placeholder="Search any address or place in Tanzania"
+              placeholder="Search any address or place in Zanzibar"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onFocus={() => query.trim().length >= 2 && setIsOpen(true)}
@@ -507,7 +539,7 @@ function LocationPicker({ form, setForm, query, setQuery }) {
             )}
             {isOpen && query.trim().length >= 2 && (
               <div className="location-suggestions" id={listboxId} role="listbox">
-                {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Tanzania…</div>}
+                {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Zanzibar…</div>}
                 {status === "empty" && <div className="location-message">No matching place found. You can still add the address you typed.</div>}
                 {status === "error" && <div className="location-message">Suggestions are unavailable. You can still add the address you typed.</div>}
                 {suggestions.map((place, index) => (
@@ -532,9 +564,15 @@ function LocationPicker({ form, setForm, query, setQuery }) {
               </div>
             )}
           </div>
-          <button className="btn secondary" type="button" onClick={() => addLocation(query)}>Add</button>
+          <div className="location-action-buttons">
+            <button className="btn secondary geolocation-button" disabled={geolocationStatus === "loading"} type="button" onClick={useCurrentLocation}>
+              {geolocationStatus === "loading" ? "Locating…" : "Use my location"}
+            </button>
+            <button className="btn secondary" type="button" onClick={() => addLocation(query)}>Add</button>
+          </div>
         </div>
       </label>
+      {geolocationError && <small className="field-error location-geolocation-error">{geolocationError}</small>}
       {!!form.locations.length && (
         <div className="location-chips">
           {form.locations.map((location) => (
