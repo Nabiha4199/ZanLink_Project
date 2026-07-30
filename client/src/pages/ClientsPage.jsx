@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { searchTanzaniaLocations } from "../services/tanzaniaLocations";
 
-const countryCodes = [
+export const countryCodes = [
   ["TZ", "Tanzania", "+255"],
   ["AF", "Afghanistan", "+93"],
   ["AL", "Albania", "+355"],
@@ -328,7 +328,7 @@ export default function ClientsPage({ clients, onRegister }) {
   );
 }
 
-function CountryCodePicker({ open, selectedIso, setOpen, onChange }) {
+export function CountryCodePicker({ open, selectedIso, setOpen, onChange }) {
   const selectedCountry = countryCodes.find(([iso]) => iso === selectedIso) || countryCodes[0];
 
   function selectCountry(iso) {

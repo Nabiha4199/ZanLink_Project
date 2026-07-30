@@ -86,7 +86,9 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
   const initials = user.name.split(" ").map((part) => part[0]).join("").slice(0, 2);
   return (
     <aside className="sidebar">
-      <div className="brand"><img className="sidebar-brand-logo" src={zanlinkLogo} alt="Zanlink" /></div>
+      <div className="brand">
+        <img className="sidebar-brand-logo" src={zanlinkLogo} alt="Zanlink" width="175" height="48" />
+      </div>
       <div className="user-box" data-tour="account">
         <div className="user-avatar">{initials}</div>
         <div><strong>{user.name}</strong><span>{user.role} / {user.department}</span></div>

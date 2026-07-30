@@ -62,18 +62,6 @@ button {
   border-right: 1px solid var(--line);
 }
 
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  display: grid;
-  place-items: center;
-  background: var(--brand);
-  color: white;
-  border-radius: 8px;
-  font-weight: 800;
-  font-size: 22px;
-}
-
 .login-brand-logo {
   display: block;
   width: 150px;
@@ -357,7 +345,7 @@ textarea {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 18px;
   padding: 18px;
   background:
@@ -368,7 +356,8 @@ textarea {
 .sidebar {
   position: sticky;
   top: 18px;
-  height: calc(100vh - 36px);
+  height: calc(100dvh - 36px);
+  overflow: hidden;
   background: white;
   color: var(--ink);
   padding: 20px 16px;
@@ -383,12 +372,13 @@ textarea {
 .sidebar .brand {
   display: flex;
   align-items: center;
+  min-height: 48px;
   padding: 0 6px;
 }
 
 .sidebar-brand-logo {
   display: block;
-  width: 160px;
+  width: 175px;
   max-width: 100%;
   height: auto;
   object-fit: contain;
@@ -426,7 +416,13 @@ textarea {
 
 .nav {
   display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
   gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .nav button,
@@ -442,6 +438,7 @@ textarea {
   text-align: left;
   padding: 10px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .nav button.active,
@@ -481,11 +478,13 @@ textarea {
 }
 
 .logout {
-  margin-top: auto;
+  flex: 0 0 auto;
+  margin-top: 0;
 }
 
 .tour-launch {
-  margin-top: auto;
+  flex: 0 0 auto;
+  margin-top: 0;
 }
 
 .tour-layer {
@@ -1074,6 +1073,7 @@ tr:last-child td {
   .sidebar {
     position: static;
     height: auto;
+    overflow: visible;
     z-index: 10;
   }
 
@@ -1083,7 +1083,9 @@ tr:last-child td {
   }
 
   .nav {
+    overflow: visible;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-right: 0;
   }
 
   .logout {

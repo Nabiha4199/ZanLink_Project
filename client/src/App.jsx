@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
 import { currencies, emptyItem, engineerStockItems, requestedServices, serviceTypes } from "./config/workflow";
-import ClientsPage from "./pages/ClientsPage";
+import ClientsPage, { CountryCodePicker, countryCodes } from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ReportsPage from "./pages/ReportsPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import { api } from "./services/api";
+import { searchTanzaniaLocations } from "./services/tanzaniaLocations";
 import { formatDate, money } from "./utils/formatters";
 import { canAct, statusClass } from "./utils/permissions";
 
@@ -242,7 +243,7 @@ function PasswordSetupCard({ onSubmit }) {
 }
 
 function Doc1Form({ clients, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", contact: "", email: "", location: "", service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New Document 1" subtitle="Customer onboarding and stock requisition starts from Engineer." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Sales">
       <div className="form-grid">
@@ -270,7 +271,7 @@ function Doc1Form({ clients, onSubmit, onCancel }) {
 }
 
 function MaintenanceForm({ clients, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New Maintenance Request" subtitle="Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
       <div className="form-grid">
@@ -565,7 +566,7 @@ function Doc1Actions({ user, doc, run }) {
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
-          {textInput("Location", "location", sales, setSales, true)}
+          <label>Location<TanzaniaLocationField disabled={!salesOpen} value={sales.location} onChange={(location) => setSales({ ...sales, location })} /></label>
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
           <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
           {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
@@ -862,18 +863,43 @@ function History({ doc }) {
   return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{item.note}</small></div></div>)}</div></section>;
 }
 
+const countryCodesByPrefix = [...countryCodes].sort((first, second) => second[2].length - first[2].length);
+
+function splitContactNumber(contact, fallbackIso = "TZ") {
+  const value = String(contact || "").trim();
+  const matchedCountry = countryCodesByPrefix.find(([, , dialCode]) =>
+    value === dialCode || value.startsWith(`${dialCode} `)
+  );
+  const selectedCountry = matchedCountry || countryCodes.find(([iso]) => iso === fallbackIso) || countryCodes[0];
+  return {
+    countryIso: selectedCountry[0],
+    number: matchedCountry ? value.slice(matchedCountry[2].length).trim() : value,
+  };
+}
+
+function formatContactNumber(countryIso, number) {
+  const trimmedNumber = String(number || "").trim();
+  if (!trimmedNumber) return "";
+  const selectedCountry = countryCodes.find(([iso]) => iso === countryIso) || countryCodes[0];
+  return `${selectedCountry[2]} ${trimmedNumber}`;
+}
+
 function ClientFields({ clients, form, setForm }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const contactParts = splitContactNumber(form.contact, form.countryIso);
 
   function selectClient(clientId) {
     const client = clients.find((item) => item.id === clientId);
+    const clientContact = splitContactNumber(client?.contact || "", "TZ");
     setForm({
       ...form,
       clientId,
       clientName: client?.name || "",
+      countryIso: clientContact.countryIso,
       contact: client?.contact || "",
       email: client?.email || "",
-      location: client?.locations?.[0] || "",
+      location: "",
     });
   }
 
@@ -887,15 +913,164 @@ function ClientFields({ clients, form, setForm }) {
         {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
       </label>
       <label>Location
-        <select required value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
-          <option value="">{selectedClient ? "Select location" : "Select a client first"}</option>
-          {(selectedClient?.locations || []).map((location) => <option key={location}>{location}</option>)}
-        </select>
-        {!selectedClient && <small className="field-guidance">Choose a registered client to load their service locations.</small>}
+        <TanzaniaLocationField
+          value={form.location}
+          onChange={(location) => setForm({ ...form, location })}
+        />
+        {!selectedClient && <small className="field-guidance">Select a client, then search for any service location in Tanzania.</small>}
       </label>
-      <label>Contact<input readOnly value={form.contact} /></label>
+      <label>Contact
+        <div className="phone-input-wrap">
+          <CountryCodePicker
+            open={countryPickerOpen}
+            selectedIso={contactParts.countryIso}
+            setOpen={setCountryPickerOpen}
+            onChange={(countryIso) => setForm({
+              ...form,
+              countryIso,
+              contact: formatContactNumber(countryIso, contactParts.number),
+            })}
+          />
+          <input
+            inputMode="tel"
+            placeholder="Phone number"
+            required
+            value={contactParts.number}
+            onChange={(event) => setForm({
+              ...form,
+              countryIso: contactParts.countryIso,
+              contact: formatContactNumber(contactParts.countryIso, event.target.value),
+            })}
+          />
+        </div>
+      </label>
       <label>Email<input readOnly value={form.email} /></label>
     </>
+  );
+}
+
+function TanzaniaLocationField({ value, onChange, disabled = false }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [status, setStatus] = useState("idle");
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
+  const requestNumber = useRef(0);
+  const skipNextSearch = useRef(false);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (disabled || query.length < 2) {
+      setSuggestions([]);
+      setStatus("idle");
+      setActiveIndex(-1);
+      return undefined;
+    }
+    if (skipNextSearch.current) {
+      skipNextSearch.current = false;
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const currentRequest = ++requestNumber.current;
+    setStatus("loading");
+    setIsOpen(true);
+
+    const debounce = window.setTimeout(() => {
+      searchTanzaniaLocations(query, controller.signal)
+        .then((results) => {
+          if (currentRequest !== requestNumber.current) return;
+          setSuggestions(results);
+          setStatus(results.length ? "ready" : "empty");
+          setActiveIndex(results.length ? 0 : -1);
+        })
+        .catch((error) => {
+          if (error.name === "AbortError" || currentRequest !== requestNumber.current) return;
+          setSuggestions([]);
+          setStatus("error");
+          setActiveIndex(-1);
+        });
+    }, 450);
+
+    return () => {
+      window.clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [value, disabled]);
+
+  function selectLocation(location) {
+    skipNextSearch.current = true;
+    onChange(location);
+    setSuggestions([]);
+    setStatus("idle");
+    setIsOpen(false);
+    setActiveIndex(-1);
+  }
+
+  return (
+    <div className="location-combobox">
+      <span className="location-search-icon" aria-hidden="true">⌕</span>
+      <input
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-expanded={!disabled && isOpen && value.trim().length >= 2}
+        aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
+        autoComplete="off"
+        disabled={disabled}
+        required
+        role="combobox"
+        placeholder="Search any address or place in Tanzania"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => !disabled && value.trim().length >= 2 && setIsOpen(true)}
+        onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && suggestions.length) {
+            event.preventDefault();
+            setIsOpen(true);
+            setActiveIndex((index) => (index + 1) % suggestions.length);
+          } else if (event.key === "ArrowUp" && suggestions.length) {
+            event.preventDefault();
+            setIsOpen(true);
+            setActiveIndex((index) => (index <= 0 ? suggestions.length - 1 : index - 1));
+          } else if (event.key === "Escape") {
+            setIsOpen(false);
+          } else if (event.key === "Enter" && suggestions[activeIndex]) {
+            event.preventDefault();
+            selectLocation(suggestions[activeIndex].label);
+          }
+        }}
+      />
+      {!disabled && !!value && (
+        <button className="location-clear" aria-label="Clear location search" type="button" onClick={() => onChange("")}>×</button>
+      )}
+      {!disabled && isOpen && value.trim().length >= 2 && (
+        <div className="location-suggestions" id={listboxId} role="listbox">
+          {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Tanzania…</div>}
+          {status === "empty" && <div className="location-message">No matching place found. You can still use the address you typed.</div>}
+          {status === "error" && <div className="location-message">Suggestions are unavailable. You can still use the address you typed.</div>}
+          {suggestions.map((place, index) => (
+            <button
+              className={index === activeIndex ? "active" : ""}
+              id={`${listboxId}-${index}`}
+              key={place.id}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => selectLocation(place.label)}
+            >
+              <span>{place.name}</span>
+              <small>{place.label}</small>
+            </button>
+          ))}
+          {(status === "ready" || status === "empty") && (
+            <div className="location-attribution">Search results © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

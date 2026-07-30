@@ -286,14 +286,16 @@ def find_client(client_id: str | None) -> dict | None:
     return next((client for client in STATE["clients"] if client["id"] == client_id), None)
 
 
-def registered_client_details(payload: dict) -> tuple[dict, str]:
+def registered_client_details(payload: dict) -> tuple[dict, str, str]:
     client = find_client(str(payload.get("clientId") or ""))
     if not client:
         raise ValueError("Select a registered client")
-    location = require_text(payload, "location", "Location")
+    location = require_text(payload, "location", "Location", max_length=180)
+    contact = require_text(payload, "contact", "Contact number", max_length=80)
+    client["contact"] = contact
     if location not in client.get("locations", []):
-        raise ValueError("Select one of the client's registered locations")
-    return client, location
+        client.setdefault("locations", []).append(location)
+    return client, location, contact
 
 
 def requested_service(payload: dict) -> str:
@@ -1258,7 +1260,7 @@ def create_doc1():
     service_type = payload.get("serviceType", "new_installation")
     if service_type not in {"new_installation", "reconnection", "wifi_extension", "shifting_connection", "general_maintenance"}:
         raise ValueError("Please select a valid onboarding type")
-    client, location = registered_client_details(payload)
+    client, location, contact = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Stock item")
     doc = {
         "id": str(uuid4()),
@@ -1266,7 +1268,7 @@ def create_doc1():
         "number": next_number("doc1"),
         "clientId": client["id"],
         "clientName": client["name"],
-        "contact": client["contact"],
+        "contact": contact,
         "email": client["email"],
         "service": requested_service(payload),
         "serviceType": service_type,
@@ -1292,7 +1294,7 @@ def create_maintenance():
     user = current_user()
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
-    client, location = registered_client_details(payload)
+    client, location, contact = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Maintenance material")
     doc = {
         "id": str(uuid4()),
@@ -1300,7 +1302,7 @@ def create_maintenance():
         "number": next_number("maintenance"),
         "clientId": client["id"],
         "clientName": client["name"],
-        "contact": client["contact"],
+        "contact": contact,
         "email": client["email"],
         "service": requested_service(payload),
         "location": location,
