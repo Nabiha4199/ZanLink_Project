@@ -45,6 +45,18 @@ export const requestedServices = [
   "Link Maintenance",
 ];
 
+export const subscriptionPackages = [
+  "Home 10 Mbps",
+  "Home 20 Mbps",
+  "Business 20 Mbps",
+  "Business 50 Mbps",
+  "Business 100 Mbps",
+  "Dedicated 10 Mbps",
+  "Dedicated 20 Mbps",
+  "Dedicated 50 Mbps",
+  "Dedicated 100 Mbps",
+];
+
 export const currencies = ["TZS", "USD"];
 
 export const locationOptions = [

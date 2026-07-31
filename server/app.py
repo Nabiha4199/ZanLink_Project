@@ -1356,7 +1356,7 @@ def sales_submit(document_id: str):
     total_sales_cost = labor_charge + package_cost
     one_time_total = total_sales_cost + additional_npr
     grand_total = one_time_total + mbr
-    submitted_at = datetime.now(timezone.utc)
+    submitted_at = datetime.now(timezone(timedelta(hours=3)))
     doc["clientName"] = client_name
     doc["location"] = location
     doc["store"]["items"] = store_items
@@ -1374,7 +1374,7 @@ def sales_submit(document_id: str):
         "mbr": mbr,
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
         "requestedDate": submitted_at.date().isoformat(),
-        "requestedTime": submitted_at.strftime("%H:%M"),
+        "requestedTime": submitted_at.strftime("%I:%M %p"),
         "currency": currency,
         "equipment": deepcopy(equipment),
         "remarks": subscription,

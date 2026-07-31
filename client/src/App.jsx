@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
-import { currencies, emptyItem, engineerStockItems, requestedServices, serviceTypes } from "./config/workflow";
+import { currencies, emptyItem, engineerStockItems, requestedServices, serviceTypes, subscriptionPackages } from "./config/workflow";
 import ClientsPage, { CountryCodePicker, countryCodes } from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -11,7 +11,7 @@ import ReportsPage from "./pages/ReportsPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import { api } from "./services/api";
 import { searchTanzaniaLocations } from "./services/tanzaniaLocations";
-import { formatDate, money } from "./utils/formatters";
+import { formatDate, formatTime, money } from "./utils/formatters";
 import { canAct, statusClass } from "./utils/permissions";
 
 function App() {
@@ -450,8 +450,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
         <PaperCheck label="New Installation" active={(doc.serviceType || "new_installation") === "new_installation"} />
         <PaperCheck label="Reconnection" active={doc.serviceType === "reconnection"} />
         <PaperCheck label="WiFi Extension" active={doc.serviceType === "wifi_extension"} />
-        <PaperCheck label="IP" />
-        <PaperCheck label="Site Addition" />
+        <PaperCheck label="TT" />
       </div>
       <div className="paper-fields">
         <Field label="Client Name" value={doc.clientName} />
@@ -465,6 +464,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
         <Field label="First Invoice Total" value={money(firstInvoiceTotal, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
         <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
+        <Field label="Time" value={formatTime(doc.sales?.requestedTime || doc.createdAt)} />
       </div>
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Reviewed by" value="Engineer" /></div>
@@ -598,12 +598,12 @@ function Doc1Actions({ user, doc, run }) {
           <p><strong>Total Cost from Sales</strong><br />{money(salesTotal, sales.currency)}</p>
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
           <AutoTotal label="Total One-time Cost" value={oneTimeTotal} currency={sales.currency} />
-          {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
+          {subscriptionInput(sales, setSales, !salesOpen)}
           {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
           <AutoTotal label="First Invoice Total" value={grandTotal} currency={sales.currency} />
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
-          <label>Time<input type="time" readOnly value={sales.requestedTime} /></label>
+          <label>Time<input readOnly value={formatTime(sales.requestedTime)} /></label>
         </div>
         <EquipmentCostEditor items={salesEquipment} setItems={setSalesEquipment} locked={!salesOpen} currency={sales.currency || "TZS"} />
       </ActionPanel>
@@ -1098,6 +1098,25 @@ function ServiceSelect({ form, setForm, label }) {
 
 function textInput(label, key, form, setForm, disabled = false, required = true) {
   return <label>{label}<input disabled={disabled} required={required} value={form[key] || ""} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>;
+}
+
+function subscriptionInput(form, setForm, disabled = false) {
+  return (
+    <label>Subscription Package
+      <input
+        disabled={disabled}
+        required
+        list="subscription-package-options"
+        value={form.subscription || ""}
+        onChange={(event) => setForm({ ...form, subscription: event.target.value })}
+      />
+      <datalist id="subscription-package-options">
+        {subscriptionPackages.map((subscriptionPackage) => (
+          <option key={subscriptionPackage} value={subscriptionPackage} />
+        ))}
+      </datalist>
+    </label>
+  );
 }
 
 function numberInput(label, key, form, setForm, disabled = false) {
