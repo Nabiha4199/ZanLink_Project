@@ -243,7 +243,7 @@ function PasswordSetupCard({ onSubmit }) {
 }
 
 function Doc1Form({ clients, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New Document 1" subtitle="Customer onboarding and stock requisition starts from Engineer." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Sales">
       <div className="form-grid">
@@ -271,7 +271,7 @@ function Doc1Form({ clients, onSubmit, onCancel }) {
 }
 
 function MaintenanceForm({ clients, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New General Maintenance" subtitle="General Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
       <div className="form-grid">
@@ -371,10 +371,11 @@ function SalesCostSummary({ doc }) {
 
 function ManagementReview({ user, doc, run }) {
   const pending = doc.status === "Pending Management";
+  const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store Manager");
   return (
     <ActionPanel title="Store Manager Submission" enabled={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, {}), "Document approved and completed.")}>
       <div className="form-grid">
-        <p><strong>Submitted By</strong><br />Store Manager</p>
+        <p><strong>Submitted By</strong><br />{storeName}</p>
         <p><strong>Submitted At</strong><br />{doc.store?.approvedAt ? formatDate(doc.store.approvedAt) : "-"}</p>
         <p><strong>Status</strong><br /><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></p>
       </div>
@@ -460,6 +461,12 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
   );
   const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mrr ?? doc.sales?.mbr ?? 0));
   const laborCharge = Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0);
+  const engineerName = actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Engineer");
+  const salesName = actorName(doc.sales?.submittedByName || doc.sales?.requestedBy, doc.sales?.submittedBy, "Sales");
+  const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store");
+  const managementName = actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Pending Management");
+  const isBilled = Boolean(doc.accounts?.invoiceNumber || Number(doc.accounts?.billingAmount || 0) > 0);
+  const billingDate = doc.accounts?.processedAt ? formatDate(doc.accounts.processedAt) : "-";
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head"><span className="paper-logo">zanlink</span><h2>Customer Onboarding Form</h2><span>Form No. {doc.number}</span></header>
@@ -480,18 +487,18 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
         <Field label="Subscription package" value={doc.sales?.subscription || doc.sales?.remarks || doc.service} />
         <Field label="MRR" value={money(doc.sales?.mrr ?? doc.sales?.mbr ?? 0, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="First Invoice Total" value={money(firstInvoiceTotal, doc.accounts?.currency || doc.sales?.currency)} />
-        <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
+        <Field label="Requested By" value={salesName} />
         <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
         <Field label="Time" value={formatTime(doc.sales?.requestedTime || doc.createdAt)} />
       </div>
       <h3>Engineering Confirmation</h3>
-      <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Reviewed by" value="Engineer" /></div>
+      <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Prepared by" value={engineerName} /></div>
       <h3>Management Approval</h3>
-      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? "Management" : "Pending Management"} /><Field label="Comments" value={doc.management?.approvedBy ? (doc.management?.remarks || "Approved") : "Approval optional"} /></div>
+      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.approvedBy ? (doc.management?.remarks || "Approved") : "Approval optional"} /></div>
       <h3>Admin Stock Confirmation</h3>
-      <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value="Store" /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
+      <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value={storeName} /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
       <h3>Finance & Billing</h3>
-      <div className="paper-fields two"><Field label="Billing Confirmation" value="Confirmed" /><Field label="User Created in System" value="Yes" /><Field label="Invoice Number" value={doc.accounts?.invoiceNumber} /><Field label="Received By" value="Engineer" /></div>
+      <div className="paper-fields two"><Field label="Billing Confirmation" value={isBilled ? "Billed" : "Not Billed"} /><Field label="User Created in System" value={isBilled ? "Yes" : "No"} /><Field label="Date" value={billingDate} /><Field label="Received by" value={engineerName} /></div>
     </article>
   );
 }
@@ -501,6 +508,9 @@ function PaperCheck({ label, active = false }) {
 }
 
 function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
+  const engineerName = actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Engineer");
+  const accountsName = actorName(doc.accounts?.processedByName, doc.accounts?.processedBy, "Accounts");
+  const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store");
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>Install Requisition No. {doc.number}</p></div></header>
@@ -514,10 +524,10 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
       </table>
       <div className="narration"><strong>Narration</strong><p>{doc.engineer?.notes || `Installation for ${doc.clientName}`}</p></div>
       <div className="signature-grid">
-        <Signature label="Requested by" name="Engineer" position="S.E" />
-        <Signature label="Approved by" name="Accounts" position="Accounts" />
-        <Signature label="Issued by" name="Store" position="Admin" />
-        <Signature label="Received by" name="Engineer" position="N/A" />
+        <Signature label="Requested by" name={engineerName} position="S.E" />
+        <Signature label="Approved by" name={accountsName} position="Accounts" />
+        <Signature label="Issued by" name={storeName} position="Admin" />
+        <Signature label="Received by" name={engineerName} position="N/A" />
       </div>
     </article>
   );
@@ -528,6 +538,8 @@ function Signature({ label, name, position }) {
 }
 
 function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate = false }) {
+  const engineerName = actorName(doc.createdByName || doc.maintenance?.submittedByName, doc.createdBy, "Engineer");
+  const hodName = doc.hod?.approvedByName || actorName(null, doc.hod?.approvedBy, "Pending approval");
   return (
     <article id={printId} className={`paper-form certificate-form ${extraClass}`}>
       <div className="certificate-logo">zanlink</div>
@@ -544,6 +556,7 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
       <p><strong>Site Name:</strong> {doc.clientName}</p>
       <p><strong>Location:</strong> {doc.location}</p>
       <p><strong>Service:</strong> {doc.service}</p>
+      <p><strong>Submitted By:</strong> {engineerName}</p>
       <p><strong>Fault:</strong> {doc.maintenance?.fault || "-"}</p>
       <p><strong>Recommended Action:</strong> {doc.maintenance?.action || "-"}</p>
       <h3>Materials Used</h3>
@@ -557,7 +570,7 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
       </table>
       <div className="certificate-signoff">
         <strong>Head of Department</strong>
-        <span>Name: {doc.hod?.approvedByName || (doc.hod?.approvedBy ? "Head of Department" : "Pending approval")}</span>
+        <span>Name: {hodName}</span>
       </div>
     </article>
   );
@@ -885,7 +898,19 @@ function EngineerItemEditor({ items, setItems }) {
 }
 
 function History({ doc }) {
-  return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{item.note}</small></div></div>)}</div></section>;
+  return <section className="panel"><h2>Audit Trail</h2><div className="timeline">{doc.history.map((item) => <div className="history-row" key={item.id}><time>{formatDate(item.at)}</time><div><strong>{item.action}</strong><br /><small>{actorName(item.userName, item.userId, "Unknown user")} - {item.note}</small></div></div>)}</div></section>;
+}
+
+function actorName(name, userId, fallback = "") {
+  const cleanName = String(name || "").trim();
+  if (cleanName) return cleanName;
+  const legacyNames = {
+    u1: "Engineer",
+    u2: "Sales",
+    u3: "Accounts Team",
+    u4: "System Admin",
+  };
+  return legacyNames[String(userId || "")] || fallback;
 }
 
 const countryCodesByPrefix = [...countryCodes].sort((first, second) => second[2].length - first[2].length);
@@ -913,10 +938,13 @@ function ClientFields({ clients, form, setForm }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const contactParts = splitContactNumber(form.contact, form.countryIso);
+  const selectedGeoLocation = form.geoLocation || findClientGeoLocation(selectedClient, form.location);
 
   function selectClient(clientId) {
     const client = clients.find((item) => item.id === clientId);
     const clientContact = splitContactNumber(client?.contact || "", "TZ");
+    const firstGeoLocation = client?.geoLocations?.[0] || null;
+    const location = client?.locations?.[0] || firstGeoLocation?.location || "";
     setForm({
       ...form,
       clientId,
@@ -924,7 +952,16 @@ function ClientFields({ clients, form, setForm }) {
       countryIso: clientContact.countryIso,
       contact: client?.contact || "",
       email: client?.email || "",
-      location: "",
+      location,
+      geoLocation: findClientGeoLocation(client, location) || firstGeoLocation,
+    });
+  }
+
+  function updateLocation(location) {
+    setForm({
+      ...form,
+      location,
+      geoLocation: findClientGeoLocation(selectedClient, location),
     });
   }
 
@@ -938,12 +975,20 @@ function ClientFields({ clients, form, setForm }) {
         {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
       </label>
       <label>Location
-        <TanzaniaLocationField
-          value={form.location}
-          onChange={(location) => setForm({ ...form, location })}
-        />
-        {!selectedClient && <small className="field-guidance">Select a client, then search for any service location in Zanzibar.</small>}
+        {selectedClient?.locations?.length ? (
+          <select required value={form.location} onChange={(event) => updateLocation(event.target.value)}>
+            {selectedClient.locations.map((location) => (
+              <option key={location} value={location}>{location}</option>
+            ))}
+          </select>
+        ) : (
+          <TanzaniaLocationField
+            value={form.location}
+            onChange={updateLocation}
+          />
+        )}
       </label>
+      <label>Geo Location<input readOnly value={formatGeoLocation(selectedGeoLocation)} /></label>
       <label>Contact
         <div className="phone-input-wrap">
           <CountryCodePicker
@@ -972,6 +1017,16 @@ function ClientFields({ clients, form, setForm }) {
       <label>Email<input readOnly value={form.email} /></label>
     </>
   );
+}
+
+function findClientGeoLocation(client, location) {
+  if (!client || !location) return null;
+  return (client.geoLocations || []).find((item) => item.location === location) || null;
+}
+
+function formatGeoLocation(geoLocation) {
+  if (!geoLocation) return "";
+  return `${Number(geoLocation.latitude).toFixed(5)}, ${Number(geoLocation.longitude).toFixed(5)}`;
 }
 
 function TanzaniaLocationField({ value, onChange, disabled = false }) {

@@ -2,7 +2,7 @@ const SEARCH_ENDPOINT = "https://nominatim.openstreetmap.org/search";
 const REVERSE_ENDPOINT = "https://nominatim.openstreetmap.org/reverse";
 const MIN_REQUEST_INTERVAL_MS = 1100;
 const CACHE_KEY = "zanlink:zanzibar-location-searches";
-const MAX_CACHED_SEARCHES = 80;
+const MAX_CACHED_SEARCHES = 200;
 
 let lastRequestAt = 0;
 
@@ -59,6 +59,61 @@ const zanzibarAdministrativeLocations = [
   ["Micheweni", "Micheweni District Council, Kaskazini Pemba"],
   ["Chake Chake", "Chake Chake Town Council, Kusini Pemba"],
   ["Mkoani", "Mkoani Town Council, Kusini Pemba"],
+  ["Mizingani Road", "Stone Town, Mjini Magharibi"],
+  ["Kenyatta Road", "Stone Town, Mjini Magharibi"],
+  ["Creek Road", "Stone Town, Mjini Magharibi"],
+  ["Gizenga Street", "Stone Town, Mjini Magharibi"],
+  ["Hurumzi Street", "Stone Town, Mjini Magharibi"],
+  ["Sokomuhogo Street", "Stone Town, Mjini Magharibi"],
+  ["Shangani Street", "Stone Town, Mjini Magharibi"],
+  ["Kiponda Street", "Stone Town, Mjini Magharibi"],
+  ["Malindi Street", "Stone Town, Mjini Magharibi"],
+  ["Darajani Road", "Stone Town, Mjini Magharibi"],
+  ["Vuga Road", "Stone Town, Mjini Magharibi"],
+  ["Mkunazini Road", "Stone Town, Mjini Magharibi"],
+  ["Mchangani Road", "Stone Town, Mjini Magharibi"],
+  ["Benjamin Mkapa Road", "Mjini Magharibi"],
+  ["Malawi Road", "Mjini Magharibi"],
+  ["Karume Road", "Mjini Magharibi"],
+  ["Nyerere Road", "Mjini Magharibi"],
+  ["Airport Road", "Mjini Magharibi"],
+  ["Kaunda Road", "Mjini Magharibi"],
+  ["Mlandege Road", "Mjini Magharibi"],
+  ["Michenzani Road", "Mjini Magharibi"],
+  ["Kikwajuni Road", "Mjini Magharibi"],
+  ["Kilimani Road", "Mjini Magharibi"],
+  ["Amani Road", "Mjini Magharibi"],
+  ["Kwa Mchina Road", "Mjini Magharibi"],
+  ["Magomeni Road", "Mjini Magharibi"],
+  ["Mwanakwerekwe Road", "Mjini Magharibi"],
+  ["Kisauni Road", "Mjini Magharibi"],
+  ["Mazizini Road", "Mjini Magharibi"],
+  ["Chukwani Road", "Mjini Magharibi"],
+  ["Mbweni Road", "Mjini Magharibi"],
+  ["Fuoni Road", "Mjini Magharibi"],
+  ["Bububu Road", "Mjini Magharibi"],
+  ["Mtoni Road", "Mjini Magharibi"],
+  ["Chuini Road", "Mjini Magharibi"],
+  ["Kiembe Samaki Road", "Mjini Magharibi"],
+  ["Fumba Road", "Kusini Magharibi"],
+  ["Nungwi Road", "Kaskazini Unguja"],
+  ["Kendwa Road", "Kaskazini Unguja"],
+  ["Matemwe Road", "Kaskazini Unguja"],
+  ["Kiwengwa Road", "Kaskazini Unguja"],
+  ["Pongwe Road", "Kaskazini Unguja"],
+  ["Mangapwani Road", "Kaskazini Unguja"],
+  ["Koani Road", "Kusini Unguja"],
+  ["Jozani Road", "Kusini Unguja"],
+  ["Paje Road", "Kusini Unguja"],
+  ["Jambiani Road", "Kusini Unguja"],
+  ["Bwejuu Road", "Kusini Unguja"],
+  ["Makunduchi Road", "Kusini Unguja"],
+  ["Kizimkazi Road", "Kusini Unguja"],
+  ["Wete Road", "Kaskazini Pemba"],
+  ["Micheweni Road", "Kaskazini Pemba"],
+  ["Konde Road", "Kaskazini Pemba"],
+  ["Chake Chake Road", "Kusini Pemba"],
+  ["Mkoani Road", "Kusini Pemba"],
 ].map(([name, area], index) => ({
   id: `zanzibar-admin-${index}`,
   name,
@@ -112,7 +167,7 @@ export async function searchTanzaniaLocations(query, signal) {
   if (cache[normalizedQuery]) {
     return [...administrativeMatches, ...cache[normalizedQuery]]
       .filter((place, index, all) => all.findIndex((item) => item.label === place.label) === index)
-      .slice(0, 8);
+      .slice(0, 20);
   }
 
   await waitForRequestSlot(signal);
@@ -123,7 +178,7 @@ export async function searchTanzaniaLocations(query, signal) {
     format: "jsonv2",
     addressdetails: "1",
     countrycodes: "tz",
-    limit: "8",
+    limit: "50",
     viewbox: "39.05,-4.70,40.10,-6.60",
     bounded: "1",
     "accept-language": "en",
@@ -143,6 +198,8 @@ export async function searchTanzaniaLocations(query, signal) {
         id: `${place.osm_type}-${place.osm_id}`,
         name: place.name || place.display_name.split(",")[0],
         label: place.display_name.slice(0, 180),
+        latitude: Number(place.lat),
+        longitude: Number(place.lon),
       }));
   } catch (error) {
     if (error.name === "AbortError" || !administrativeMatches.length) throw error;
@@ -152,7 +209,7 @@ export async function searchTanzaniaLocations(query, signal) {
   writeCache(cache);
   return [...administrativeMatches, ...results]
     .filter((place, index, all) => all.findIndex((item) => item.label === place.label) === index)
-    .slice(0, 8);
+    .slice(0, 20);
 }
 
 export async function reverseZanzibarLocation(latitude, longitude, signal) {

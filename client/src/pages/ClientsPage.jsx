@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { reverseZanzibarLocation, searchTanzaniaLocations } from "../services/tanzaniaLocations";
+import { searchTanzaniaLocations } from "../services/tanzaniaLocations";
 
 export const countryCodes = [
   ["TZ", "Tanzania", "+255"],
@@ -246,7 +246,7 @@ export const countryCodes = [
   ["ZW", "Zimbabwe", "+263"],
 ];
 
-const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [] };
+const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [], geoLocations: [] };
 
 function normalizeTanzaniaContact(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -260,9 +260,11 @@ function normalizeTanzaniaContact(value) {
 export default function ClientsPage({ clients, onRegister }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
+  const [geoDraft, setGeoDraft] = useState({ latitude: "", longitude: "" });
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [contactError, setContactError] = useState("");
+  const [locationError, setLocationError] = useState("");
   const visible = clients.filter((client) =>
     `${client.name} ${client.contact} ${client.email} ${(client.locations || []).join(" ")}`
       .toLowerCase()
@@ -273,6 +275,9 @@ export default function ClientsPage({ clients, onRegister }) {
   const locationsToSubmit = pendingLocation && !form.locations.some((location) => location.toLowerCase() === pendingLocation.toLowerCase())
     ? [...form.locations, pendingLocation]
     : form.locations;
+  const geoLocationsToSubmit = pendingLocation
+    ? mergeGeoLocation(form.geoLocations, pendingLocation, geoDraft)
+    : form.geoLocations;
 
   function submit(event) {
     event.preventDefault();
@@ -282,15 +287,22 @@ export default function ClientsPage({ clients, onRegister }) {
       setContactError("Enter a valid Tanzania number, for example 0712 345 678.");
       return;
     }
+    if (geoLocationsToSubmit.length < locationsToSubmit.length) {
+      setLocationError("Add latitude and longitude for every registered client location.");
+      return;
+    }
     setContactError("");
+    setLocationError("");
     onRegister({
       name: form.name,
       contact,
       email: form.email,
       locations: locationsToSubmit,
+      geoLocations: geoLocationsToSubmit,
     }).then(() => {
       setForm(emptyClient);
       setLocationQuery("");
+      setGeoDraft({ latitude: "", longitude: "" });
     }).catch(() => {});
   }
 
@@ -328,7 +340,7 @@ export default function ClientsPage({ clients, onRegister }) {
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-          <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} />
+          <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} geoDraft={geoDraft} setGeoDraft={setGeoDraft} error={locationError} setError={setLocationError} />
         </div>
         <div className="button-row"><button className="btn" disabled={!locationsToSubmit.length}>Register Client</button></div>
       </form>
@@ -339,15 +351,29 @@ export default function ClientsPage({ clients, onRegister }) {
       {!visible.length ? <div className="panel empty">No clients match this search.</div> : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Client</th><th>Contact</th><th>Email</th><th>Location(s)</th></tr></thead>
+            <thead><tr><th>Client</th><th>Contact</th><th>Email</th><th>Location(s)</th><th>Geo Location</th></tr></thead>
             <tbody>{visible.map((client) => (
-              <tr key={client.id}><td><strong>{client.name}</strong></td><td>{client.contact}</td><td>{client.email}</td><td>{(client.locations || []).join(", ")}</td></tr>
+              <tr key={client.id}><td><strong>{client.name}</strong></td><td>{client.contact}</td><td>{client.email}</td><td>{(client.locations || []).join(", ")}</td><td>{formatClientGeoLocations(client.geoLocations)}</td></tr>
             ))}</tbody>
           </table>
         </div>
       )}
     </>
   );
+}
+
+function mergeGeoLocation(geoLocations, location, geoDraft) {
+  const latitude = Number(geoDraft.latitude);
+  const longitude = Number(geoDraft.longitude);
+  if (!location || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return geoLocations;
+  return [...geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }];
+}
+
+function formatClientGeoLocations(geoLocations = []) {
+  if (!geoLocations.length) return "-";
+  return geoLocations
+    .map((item) => `${Number(item.latitude).toFixed(5)}, ${Number(item.longitude).toFixed(5)}`)
+    .join("; ");
 }
 
 export function CountryCodePicker({ open, selectedIso, setOpen, onChange }) {
@@ -408,11 +434,9 @@ function FlagImage({ iso, country }) {
   );
 }
 
-function LocationPicker({ form, setForm, query, setQuery }) {
+function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft, error, setError }) {
   const [suggestions, setSuggestions] = useState([]);
   const [status, setStatus] = useState("idle");
-  const [geolocationStatus, setGeolocationStatus] = useState("idle");
-  const [geolocationError, setGeolocationError] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
@@ -457,46 +481,25 @@ function LocationPicker({ form, setForm, query, setQuery }) {
     };
   }, [query, form.locations]);
 
-  function addLocation(value) {
+  function addLocation(value, geo = null) {
     const location = value.trim();
     if (!location) return;
-    if (!form.locations.some((item) => item.toLowerCase() === location.toLowerCase())) {
-      setForm({ ...form, locations: [...form.locations, location] });
+    const latitude = Number(geo?.latitude ?? geoDraft.latitude);
+    const longitude = Number(geo?.longitude ?? geoDraft.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setError("Add latitude and longitude before adding this location.");
+      return;
     }
+    if (!form.locations.some((item) => item.toLowerCase() === location.toLowerCase())) {
+      const geoLocations = [...form.geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }];
+      setForm({ ...form, locations: [...form.locations, location], geoLocations });
+    }
+    setError("");
     setQuery("");
+    setGeoDraft({ latitude: "", longitude: "" });
     setSuggestions([]);
     setIsOpen(false);
     setStatus("idle");
-  }
-
-  function useCurrentLocation() {
-    if (!navigator.geolocation) {
-      setGeolocationError("This browser does not support geolocation.");
-      return;
-    }
-    setGeolocationStatus("loading");
-    setGeolocationError("");
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        try {
-          const place = await reverseZanzibarLocation(coords.latitude, coords.longitude);
-          addLocation(place.label);
-          setGeolocationStatus("success");
-        } catch (error) {
-          setGeolocationStatus("error");
-          setGeolocationError(error.message);
-        }
-      },
-      (error) => {
-        setGeolocationStatus("error");
-        setGeolocationError(
-          error.code === error.PERMISSION_DENIED
-            ? "Location permission was denied. Allow location access and try again."
-            : "Your current location could not be detected. Try again outdoors or enter it manually."
-        );
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    );
   }
 
   return (
@@ -530,7 +533,8 @@ function LocationPicker({ form, setForm, query, setQuery }) {
                   setIsOpen(false);
                 } else if (event.key === "Enter") {
                   event.preventDefault();
-                  addLocation(suggestions[activeIndex]?.label || query);
+                  const selected = suggestions[activeIndex];
+                  addLocation(selected?.label || query, selected);
                 }
               }}
             />
@@ -552,7 +556,7 @@ function LocationPicker({ form, setForm, query, setQuery }) {
                     aria-selected={index === activeIndex}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => addLocation(place.label)}
+                    onClick={() => addLocation(place.label, place)}
                   >
                     <span>{place.name}</span>
                     <small>{place.label}</small>
@@ -565,14 +569,15 @@ function LocationPicker({ form, setForm, query, setQuery }) {
             )}
           </div>
           <div className="location-action-buttons">
-            <button className="btn secondary geolocation-button" disabled={geolocationStatus === "loading"} type="button" onClick={useCurrentLocation}>
-              {geolocationStatus === "loading" ? "Locating…" : "Use my location"}
-            </button>
             <button className="btn secondary" type="button" onClick={() => addLocation(query)}>Add</button>
           </div>
         </div>
       </label>
-      {geolocationError && <small className="field-error location-geolocation-error">{geolocationError}</small>}
+      <div className="form-grid two">
+        <label>Latitude<input inputMode="decimal" value={geoDraft.latitude} onChange={(event) => setGeoDraft({ ...geoDraft, latitude: event.target.value })} /></label>
+        <label>Longitude<input inputMode="decimal" value={geoDraft.longitude} onChange={(event) => setGeoDraft({ ...geoDraft, longitude: event.target.value })} /></label>
+      </div>
+      {error && <small className="field-error">{error}</small>}
       {!!form.locations.length && (
         <div className="location-chips">
           {form.locations.map((location) => (

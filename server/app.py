@@ -50,6 +50,8 @@ PASSWORD_RESET_TOKENS = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
 USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
+MONTHLY_NUMBER_PATTERN = re.compile(r"^(?:(?P<label>Zanlink)/)?(?P<year>\d{4})/(?P<month>\d{2})/(?:(?P<prefix>[A-Z]+)-)?(?P<value>\d{4,6})$")
+DOCUMENT_NUMBER_PREFIXES = {"doc1": "ONB", "maintenance": "MNT"}
 
 
 USERS = [
@@ -59,6 +61,13 @@ USERS = [
     {"id": "u8", "name": "Abdallah", "username": "abdallah", "email": "zda23b014@iitmz.ac.in", "role": "System Admin", "department": "Management"},
 
 ]
+
+LEGACY_USER_NAMES = {
+    "u1": "Engineer",
+    "u2": "Sales",
+    "u3": "Accounts Team",
+    "u4": "System Admin",
+}
 
 REGISTERABLE_ROLES = {
     "Engineer": {"role": "Engineer", "department": "Engineer"},
@@ -84,12 +93,17 @@ def money_text(value: float | int | str | None, currency: str = "TZS") -> str:
     return f"${amount:,.2f}" if currency == "USD" else f"TZS {amount:,.0f}"
 
 
-def history(user_id: str, action: str, note: str = "") -> dict:
-    return {"id": str(uuid4()), "at": now_iso(), "userId": user_id, "action": action, "note": note}
+def user_display_name(user_id: str | None, fallback: str = "") -> str:
+    user = next((item for item in USERS if item["id"] == user_id), None)
+    return (user or {}).get("name") or LEGACY_USER_NAMES.get(str(user_id or ""), fallback)
+
+
+def history(user_id: str, action: str, note: str = "", user_name: str | None = None) -> dict:
+    return {"id": str(uuid4()), "at": now_iso(), "userId": user_id, "userName": user_name or user_display_name(user_id), "action": action, "note": note}
 
 
 STATE = {
-    "counters": {"request": 3, "summary": 1},
+    "counters": {"request": 3, "summary": 1, "monthly": {}},
     "clients": [
         {"id": "c1", "name": "Stone Town Hotel", "contact": "+255 777 100 400", "email": "info@stonetownhotel.example", "locations": ["Zanzibar"], "createdAt": now_iso()},
         {"id": "c2", "name": "Airport Office", "contact": "+255 777 222 111", "email": "office@airport.example", "locations": ["Abeid Amani Karume Airport"], "createdAt": now_iso()},
@@ -108,10 +122,11 @@ STATE = {
             "status": "Pending Store",
             "currentDepartment": "Store",
             "createdBy": "u1",
+            "createdByName": user_display_name("u1", "Engineer"),
             "createdAt": now_iso(),
             "engineer": {"notes": "Install router, outdoor radio and cabling for new client."},
-            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "oneTimeTotal": 1250000, "grandTotal": 1250000, "remarks": "Business 50 Mbps package."},
-            "accounts": {"billingAmount": 1250000, "invoiceNumber": "INV-2044", "remarks": "Invoice prepared."},
+            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "oneTimeTotal": 1250000, "grandTotal": 1250000, "remarks": "Business 50 Mbps package.", "submittedBy": "u2", "submittedByName": user_display_name("u2", "Sales")},
+            "accounts": {"billingAmount": 1250000, "invoiceNumber": "INV-2044", "remarks": "Invoice prepared.", "processedBy": "u3", "processedByName": user_display_name("u3", "Accounts Team")},
             "store": {
                 "confirmed": False,
                 "amountMatches": None,
@@ -140,6 +155,7 @@ STATE = {
             "status": "Pending HOD",
             "currentDepartment": "HOD",
             "createdBy": "u1",
+            "createdByName": user_display_name("u1", "Engineer"),
             "createdAt": now_iso(),
             "maintenance": {
                 "fault": "Intermittent signal during rain.",
@@ -291,16 +307,22 @@ def find_client(client_id: str | None) -> dict | None:
     return next((client for client in STATE["clients"] if client["id"] == client_id), None)
 
 
-def registered_client_details(payload: dict) -> tuple[dict, str, str]:
+def registered_client_details(payload: dict) -> tuple[dict, str, str, dict | None]:
     client = find_client(str(payload.get("clientId") or ""))
     if not client:
         raise ValueError("Select a registered client")
     location = require_text(payload, "location", "Location", max_length=180)
     contact = require_text(payload, "contact", "Contact number", max_length=80)
+    geo_location = next((item for item in client.get("geoLocations", []) if item.get("location") == location), None)
+    payload_geo_location = payload.get("geoLocation")
+    if isinstance(payload_geo_location, dict) and payload_geo_location.get("location") == location:
+        geo_location = payload_geo_location
     client["contact"] = contact
     if location not in client.get("locations", []):
         client.setdefault("locations", []).append(location)
-    return client, location, contact
+    if geo_location and not any(item.get("location") == location for item in client.get("geoLocations", [])):
+        client.setdefault("geoLocations", []).append(geo_location)
+    return client, location, contact, geo_location
 
 
 def requested_service(payload: dict) -> str:
@@ -312,43 +334,66 @@ def find_summary(summary_id: str) -> dict | None:
     return next((summary for summary in STATE["summaries"] if summary["id"] == summary_id), None)
 
 
-def format_request_number(value: int) -> str:
-    return f"REQ-{value:06d}"
+def monthly_counter_key(kind: str, when: datetime | None = None) -> str:
+    current = when or datetime.now(timezone(timedelta(hours=3)))
+    return f"{kind}:{current.year:04d}:{current.month:02d}"
+
+
+def format_document_number(kind: str, value: int, when: datetime | None = None) -> str:
+    current = when or datetime.now(timezone(timedelta(hours=3)))
+    prefix = DOCUMENT_NUMBER_PREFIXES.get(kind, kind.upper())
+    return f"{current.year:04d}/{current.month:02d}/{prefix}-{value:04d}"
+
+
+def format_summary_number(value: int, when: datetime | None = None) -> str:
+    current = when or datetime.now(timezone(timedelta(hours=3)))
+    return f"Zanlink/{current.year:04d}/{current.month:02d}/{value:04d}"
 
 
 def normalize_request_numbers() -> None:
-    seen = set()
-    next_value = 1
+    monthly = STATE["counters"].setdefault("monthly", {})
+    current = datetime.now(timezone(timedelta(hours=3)))
+
     documents = sorted(STATE["documents"], key=lambda doc: (str(doc.get("createdAt") or ""), str(doc.get("id") or "")))
-
     for doc in documents:
-        match = REQUEST_NUMBER_PATTERN.fullmatch(str(doc.get("number") or ""))
-        if match:
-            value = int(match.group(1))
-            if value not in seen:
-                seen.add(value)
-                next_value = max(next_value, value + 1)
-                continue
+        kind = doc.get("type") or "doc1"
+        number = str(doc.get("number") or "")
+        match = MONTHLY_NUMBER_PATTERN.fullmatch(number)
+        if match and match.group("prefix") == DOCUMENT_NUMBER_PREFIXES.get(kind):
+            key = f"{kind}:{match.group('year')}:{match.group('month')}"
+            monthly[key] = max(int(monthly.get(key, 1)), int(match.group("value")) + 1)
+            continue
 
-        while next_value in seen:
-            next_value += 1
-        doc["number"] = format_request_number(next_value)
-        seen.add(next_value)
-        next_value += 1
+        key = monthly_counter_key(kind, current)
+        value = int(monthly.get(key, 1))
+        doc["number"] = format_document_number(kind, value, current)
+        monthly[key] = value + 1
 
-    STATE["counters"]["request"] = max(int(STATE["counters"].get("request", 1)), next_value)
+    for summary in STATE["summaries"]:
+        number = str(summary.get("number") or "")
+        match = MONTHLY_NUMBER_PATTERN.fullmatch(number)
+        if match and match.group("label") == "Zanlink":
+            key = f"summary:{match.group('year')}:{match.group('month')}"
+            monthly[key] = max(int(monthly.get(key, 1)), int(match.group("value")) + 1)
+            continue
+        key = monthly_counter_key("summary", current)
+        value = int(monthly.get(key, 1))
+        summary["number"] = format_summary_number(value, current)
+        monthly[key] = value + 1
 
 
 def next_number(kind: str) -> str:
-    if kind == "summary":
-        value = STATE["counters"][kind]
-        STATE["counters"][kind] = value + 1
-        return f"Zanlink/{value:06d}"
-
     normalize_request_numbers()
-    value = STATE["counters"].setdefault("request", 1)
-    STATE["counters"]["request"] = value + 1
-    return format_request_number(value)
+    current = datetime.now(timezone(timedelta(hours=3)))
+    key = monthly_counter_key(kind, current)
+    monthly = STATE["counters"].setdefault("monthly", {})
+    value = int(monthly.get(key, 1))
+    monthly[key] = value + 1
+
+    if kind == "summary":
+        return format_summary_number(value, current)
+
+    return format_document_number(kind, value, current)
 
 
 normalize_request_numbers()
@@ -486,7 +531,7 @@ def generate_summary(doc: dict) -> dict:
         "installationCost": labor_charge,
         "transportCost": 0,
         "grandTotal": billed_amount,
-        "zanlinkStaff": created_by["name"] if created_by else "",
+        "zanlinkStaff": doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or (created_by["name"] if created_by else user_display_name(doc.get("createdBy"), "")),
         "terms": "If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.",
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
@@ -637,6 +682,10 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     draw_header(pdf, "CUSTOMER ONBOARDING FORM", doc)
+    engineer_name = doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or user_display_name(doc.get("createdBy"), "Engineer")
+    sales_name = doc.get("sales", {}).get("submittedByName") or doc.get("sales", {}).get("requestedBy") or user_display_name(doc.get("sales", {}).get("submittedBy"), "Sales")
+    store_name = doc.get("store", {}).get("approvedByName") or user_display_name(doc.get("store", {}).get("approvedBy"), "Store")
+    management_name = doc.get("management", {}).get("approvedByName") or user_display_name(doc.get("management", {}).get("approvedBy"), "Pending Management")
 
     y = height - 58 * mm
     pdf.setFont("Helvetica-Bold", 10)
@@ -671,7 +720,7 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     )
     draw_label_value(pdf, "MRR", money_text(doc.get("sales", {}).get("mrr", doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount"))), currency), 143 * mm, y - 18 * mm, 45 * mm)
     draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
-    draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
+    draw_label_value(pdf, "Requested By", sales_name, 143 * mm, y - 36 * mm, 45 * mm)
     draw_label_value(pdf, "Equipment Cost", money_text(equipment_cost, currency), 22 * mm, y - 54 * mm, 56 * mm)
     draw_label_value(pdf, "One-time Total", money_text(one_time_total, currency), 85 * mm, y - 54 * mm, 52 * mm)
     draw_label_value(pdf, "First Invoice Total", money_text(grand_total, currency), 143 * mm, y - 54 * mm, 45 * mm)
@@ -680,28 +729,33 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Engineering Confirmation")
     draw_label_value(pdf, "Stock Requisition No.", doc["number"], 22 * mm, y - 4, 56 * mm)
-    draw_label_value(pdf, "Engineer Notes", doc.get("engineer", {}).get("notes", ""), 85 * mm, y - 4, 103 * mm)
+    draw_label_value(pdf, "Prepared By", engineer_name, 85 * mm, y - 4, 52 * mm)
+    draw_label_value(pdf, "Engineer Notes", doc.get("engineer", {}).get("notes", ""), 143 * mm, y - 4, 45 * mm)
 
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Management Approval")
     management_approved = bool(doc.get("management", {}).get("approvedBy"))
-    draw_label_value(pdf, "Approved By", "Management" if management_approved else "Pending Management", 22 * mm, y - 4, 56 * mm)
+    draw_label_value(pdf, "Approved By", management_name if management_approved else "Pending Management", 22 * mm, y - 4, 56 * mm)
     draw_label_value(pdf, "Comments", doc.get("management", {}).get("remarks", "") if management_approved else "Approval optional", 85 * mm, y - 4, 103 * mm)
 
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Admin Stock Confirmation")
     draw_label_value(pdf, "Stock Availability", "Confirmed", 22 * mm, y - 4, 56 * mm)
-    draw_label_value(pdf, "Stock Issued By", "Store", 85 * mm, y - 4, 52 * mm)
+    draw_label_value(pdf, "Stock Issued By", store_name, 85 * mm, y - 4, 52 * mm)
     draw_label_value(pdf, "Date", datetime.now().strftime("%d/%m/%Y"), 143 * mm, y - 4, 45 * mm)
 
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Finance & Billing")
-    draw_label_value(pdf, "Billing Confirmation", "Confirmed", 22 * mm, y - 4, 56 * mm)
-    draw_label_value(pdf, "Invoice Number", doc.get("accounts", {}).get("invoiceNumber", ""), 85 * mm, y - 4, 52 * mm)
-    draw_label_value(pdf, "Received By", "Engineer", 143 * mm, y - 4, 45 * mm)
+    is_billed = bool(doc.get("accounts", {}).get("invoiceNumber") or float(doc.get("accounts", {}).get("billingAmount") or 0) > 0)
+    processed_at = parse_iso(doc.get("accounts", {}).get("processedAt"))
+    billing_date = processed_at.strftime("%d/%m/%Y") if processed_at != datetime.min.replace(tzinfo=timezone.utc) else "-"
+    draw_label_value(pdf, "Billing Confirmation", "Billed" if is_billed else "Not Billed", 22 * mm, y - 4, 56 * mm)
+    draw_label_value(pdf, "User Created in System", "Yes" if is_billed else "No", 85 * mm, y - 4, 103 * mm)
+    draw_label_value(pdf, "Date", billing_date, 22 * mm, y - 18 * mm, 56 * mm)
+    draw_label_value(pdf, "Received by", engineer_name, 85 * mm, y - 18 * mm, 103 * mm)
 
     pdf.setFont("Helvetica-Oblique", 8)
     pdf.drawString(22 * mm, 22 * mm, "Internal All Employees")
@@ -715,6 +769,9 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     draw_header(pdf, "STOCK REQUISITION FORM", doc)
+    engineer_name = doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or user_display_name(doc.get("createdBy"), "Engineer")
+    accounts_name = doc.get("accounts", {}).get("processedByName") or user_display_name(doc.get("accounts", {}).get("processedBy"), "Accounts")
+    store_name = doc.get("store", {}).get("approvedByName") or user_display_name(doc.get("store", {}).get("approvedBy"), "Store")
     pdf.setFont("Helvetica", 9)
     pdf.drawRightString(width - 22 * mm, height - 42 * mm, f"Install Requisition No. {doc['number']}")
 
@@ -755,10 +812,10 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf.drawString(26 * mm, y - 4, doc.get("engineer", {}).get("notes") or f"Installation for {doc['clientName']}")
 
     signature_rows = [
-        ("Requested by", "Engineer", "S.E"),
-        ("Approved by", "Accounts", "Accounts"),
-        ("Issued by", "Store", "Admin"),
-        ("Received by", "Engineer", "N/A"),
+        ("Requested by", engineer_name, "S.E"),
+        ("Approved by", accounts_name, "Accounts"),
+        ("Issued by", store_name, "Admin"),
+        ("Received by", engineer_name, "N/A"),
     ]
     y -= 42 * mm
     for label, name, position in signature_rows:
@@ -1086,6 +1143,27 @@ def create_client():
         raise ValueError("Add at least one client location")
     if any(len(location) > 180 for location in cleaned_locations):
         raise ValueError("Each location must be 180 characters or fewer")
+    geo_locations = []
+    for item in payload.get("geoLocations") or []:
+        if not isinstance(item, dict):
+            continue
+        location = str(item.get("location") or "").strip()
+        if location not in cleaned_locations:
+            continue
+        try:
+            latitude = float(item.get("latitude"))
+            longitude = float(item.get("longitude"))
+        except (TypeError, ValueError):
+            raise ValueError("Geo location coordinates are invalid")
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise ValueError("Geo location coordinates are invalid")
+        geo_locations.append({"location": location, "latitude": latitude, "longitude": longitude})
+    missing_geo_locations = [
+        location for location in cleaned_locations
+        if not any(item["location"] == location for item in geo_locations)
+    ]
+    if missing_geo_locations:
+        raise ValueError("Add geo location coordinates for every client location")
     email = normalize_email(payload.get("email"))
     if any(client.get("email", "").lower() == email for client in STATE["clients"]):
         raise ValueError("A client with this email is already registered")
@@ -1095,6 +1173,7 @@ def create_client():
         "contact": normalize_tanzania_contact(payload.get("contact")),
         "email": email,
         "locations": cleaned_locations,
+        "geoLocations": geo_locations,
         "createdAt": now_iso(),
     }
     STATE["clients"].insert(0, client)
@@ -1263,7 +1342,7 @@ def create_doc1():
     service_type = payload.get("serviceType", "new_installation")
     if service_type not in {"new_installation", "reconnection", "wifi_extension", "shifting_connection", "general_maintenance"}:
         raise ValueError("Please select a valid onboarding type")
-    client, location, contact = registered_client_details(payload)
+    client, location, contact, geo_location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Stock item")
     doc = {
         "id": str(uuid4()),
@@ -1276,16 +1355,18 @@ def create_doc1():
         "service": requested_service(payload),
         "serviceType": service_type,
         "location": location,
+        "geoLocation": geo_location,
         "status": "Pending Sales",
         "currentDepartment": "Sales",
         "createdBy": user["id"],
+        "createdByName": user["name"],
         "createdAt": now_iso(),
-        "engineer": {"notes": optional_text(payload, "engineerNotes")},
+        "engineer": {"notes": optional_text(payload, "engineerNotes"), "submittedBy": user["id"], "submittedByName": user["name"]},
         "sales": {},
         "accounts": {},
         "store": {"confirmed": False, "amountMatches": None, "remarks": "", "items": items},
         "management": {},
-        "history": [history(user["id"], "Created Document 1", "Submitted to Sales.")],
+        "history": [history(user["id"], "Created Document 1", "Submitted to Sales.", user["name"])],
     }
     STATE["documents"].insert(0, doc)
     notify("Sales", f"{doc['number']} is waiting for Sales amount.")
@@ -1297,7 +1378,7 @@ def create_maintenance():
     user = current_user()
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
-    client, location, contact = registered_client_details(payload)
+    client, location, contact, geo_location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="General Maintenance material")
     doc = {
         "id": str(uuid4()),
@@ -1309,14 +1390,16 @@ def create_maintenance():
         "email": client["email"],
         "service": requested_service(payload),
         "location": location,
+        "geoLocation": geo_location,
         "status": "Pending HOD",
         "currentDepartment": "HOD",
         "createdBy": user["id"],
+        "createdByName": user["name"],
         "createdAt": now_iso(),
-        "maintenance": {"fault": require_text(payload, "fault", "Fault report", max_length=800), "action": require_text(payload, "action", "Recommended action", max_length=800), "items": items},
+        "maintenance": {"fault": require_text(payload, "fault", "Fault report", max_length=800), "action": require_text(payload, "action", "Recommended action", max_length=800), "items": items, "submittedBy": user["id"], "submittedByName": user["name"]},
         "hod": {},
         "accounts": {},
-        "history": [history(user["id"], "Created General Maintenance", "Submitted to HOD.")],
+        "history": [history(user["id"], "Created General Maintenance", "Submitted to HOD.", user["name"])],
     }
     STATE["documents"].insert(0, doc)
     notify("HOD", f"{doc['number']} is waiting for HOD approval.")
@@ -1376,6 +1459,8 @@ def sales_submit(document_id: str):
         "subscription": subscription,
         "mrr": mrr,
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
+        "submittedBy": user["id"],
+        "submittedByName": user["name"],
         "requestedDate": submitted_at.date().isoformat(),
         "requestedTime": submitted_at.strftime("%I:%M %p"),
         "currency": currency,
@@ -1385,7 +1470,7 @@ def sales_submit(document_id: str):
     set_route(doc, "Pending Accounts", "Accounts")
     action = "Sales cost updated" if was_submitted else "Sales cost submitted"
     detail = "Labor charge and equipment cost were updated for Accounts." if was_submitted else "Labor charge and equipment cost were submitted to Accounts."
-    doc["history"].append(history(user["id"], action, detail))
+    doc["history"].append(history(user["id"], action, detail, user["name"]))
     notify("Accounts", f"{doc['number']} is waiting for billing.")
     return jsonify(doc)
 
@@ -1409,10 +1494,13 @@ def accounts_submit(document_id: str):
         "remarks": require_text(payload, "remarks", "Remarks", max_length=500),
         "billInUsd": bool(payload.get("billInUsd")),
         "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
+        "processedBy": user["id"],
+        "processedByName": user["name"],
+        "processedAt": now_iso(),
     }
     if doc["type"] == "maintenance":
         set_route(doc, "Completed", "Engineer")
-        doc["history"].append(history(user["id"], "General Maintenance billing added", "General Maintenance completed and returned to Engineer."))
+        doc["history"].append(history(user["id"], "General Maintenance billing added", "General Maintenance completed and returned to Engineer.", user["name"]))
         notify("Engineer", f"{doc['number']} General Maintenance has been completed.")
     else:
         source_equipment = doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
@@ -1435,7 +1523,7 @@ def accounts_submit(document_id: str):
         doc["sales"]["oneTimeTotal"] = total_sales_cost
         doc["sales"]["grandTotal"] = total_sales_cost
         set_route(doc, "Pending Store", "Store")
-        doc["history"].append(history(user["id"], "Billing added", "Submitted to Store."))
+        doc["history"].append(history(user["id"], "Billing added", "Submitted to Store.", user["name"]))
         notify("Store", f"{doc['number']} is waiting for stock validation.")
     return jsonify(doc)
 
@@ -1470,6 +1558,7 @@ def store_submit(document_id: str):
         "confirmed": matches,
         "amountMatches": matches,
         "approvedBy": user["id"],
+        "approvedByName": user["name"],
         "approvedAt": now_iso(),
         "remarks": doc.get("store", {}).get("remarks", ""),
         "items": items,
@@ -1478,12 +1567,12 @@ def store_submit(document_id: str):
         doc["workflowCompletedAt"] = now_iso()
         set_route(doc, "Pending Management", "Management")
         generate_summary(doc)
-        doc["history"].append(history(user["id"], "Store completed the workflow", "Delivery note generated; Management approval remains optional."))
+        doc["history"].append(history(user["id"], "Store completed the workflow", "Delivery note generated; Management approval remains optional.", user["name"]))
         notify("Management", f"{doc['number']} is complete and awaiting optional approval.")
         notify("Engineer", f"{doc['number']} is complete; Management approval is still pending.")
     else:
         set_route(doc, "Returned to Sales", "Sales")
-        doc["history"].append(history(user["id"], "Returned to Sales", "Sales and Accounts amounts do not match."))
+        doc["history"].append(history(user["id"], "Returned to Sales", "Sales and Accounts amounts do not match.", user["name"]))
         notify("Sales", f"{doc['number']} was returned because amounts do not match.")
     return jsonify(doc)
 
@@ -1497,9 +1586,9 @@ def management_submit(document_id: str):
         raise ValueError("Document 1 not found")
     require_status(doc, "Pending Management")
     payload = request.get_json(force=True)
-    doc["management"] = {"approvedBy": user["id"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
+    doc["management"] = {"approvedBy": user["id"], "approvedByName": user["name"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
     set_route(doc, "Completed", "Engineer")
-    doc["history"].append(history(user["id"], "Management approved", "Document completed and returned to Engineer."))
+    doc["history"].append(history(user["id"], "Management approved", "Document completed and returned to Engineer.", user["name"]))
     notify("Engineer", f"{doc['number']} has been completed.")
     return jsonify(doc)
 
@@ -1520,7 +1609,7 @@ def hod_submit(document_id: str):
         "remarks": optional_text(payload, "remarks"),
     }
     set_route(doc, "Pending Accounts", "Accounts")
-    doc["history"].append(history(user["id"], "HOD approved General Maintenance", "Submitted to Accounts."))
+    doc["history"].append(history(user["id"], "HOD approved General Maintenance", "Submitted to Accounts.", user["name"]))
     notify("Accounts", f"{doc['number']} General Maintenance is waiting for billing.")
     return jsonify(doc)
 
