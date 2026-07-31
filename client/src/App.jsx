@@ -173,7 +173,7 @@ function App() {
         ) : view === "doc1" ? (
           <Doc1Form clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
         ) : view === "maintenance" ? (
-          <MaintenanceForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "Maintenance request submitted to HOD.")} />
+          <MaintenanceForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "General Maintenance submitted to HOD.")} />
         ) : view === "clients" ? (
           <ClientsPage clients={clients} onRegister={registerClient} />
         ) : view === "users" && user.role === "System Admin" ? (
@@ -273,7 +273,7 @@ function Doc1Form({ clients, onSubmit, onCancel }) {
 function MaintenanceForm({ clients, onSubmit, onCancel }) {
   const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
   return (
-    <FormShell title="New Maintenance Request" subtitle="Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
+    <FormShell title="New General Maintenance" subtitle="General Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
       <div className="form-grid">
         <ClientFields clients={clients} form={form} setForm={setForm} />
         <ServiceSelect form={form} setForm={setForm} label="Service" />
@@ -646,7 +646,7 @@ function MaintenanceActions({ user, doc, run }) {
   const hodPrintId = `hod-maintenance-print-${doc.id}`;
   return (
     <>
-      <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
+      <section className="panel"><h2>General Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
       {!accountsOnly && (
         <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
           <MaintenanceDocumentPreview
@@ -669,7 +669,7 @@ function MaintenanceActions({ user, doc, run }) {
           </div>
         </ActionPanel>
       )}
-      <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Maintenance completed.")}>
+      <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete General Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "General Maintenance completed.")}>
         <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
       </ActionPanel>
     </>

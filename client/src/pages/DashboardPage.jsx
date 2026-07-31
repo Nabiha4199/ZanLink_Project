@@ -24,7 +24,7 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
         <div className="page-title"><span className="eyebrow">Employee workspace</span><h1>Welcome, {user.name}</h1><p>Here&apos;s what needs your attention today.</p></div>
         <div className="toolbar">
           {canCreate(user) && <button className="btn" onClick={onCreateDoc1}>New Onboarding</button>}
-          {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New Maintenance</button>}
+          {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New General Maintenance</button>}
         </div>
       </div>
       <section className="stats dashboard-stats" data-tour="stats">{stats.map(([key, label, value, icon]) => (
@@ -41,7 +41,7 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
       <section className="panel filters" data-tour="documents">
         <div className="filter-heading"><div><strong>{activeStatLabel}</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
-        <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">Maintenance</option></select>
+        <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">General Maintenance</option></select>
         <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
         <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
       </section>
@@ -62,7 +62,7 @@ function DocumentTable({ user, documents, onOpen, onShowWorkflow }) {
             return (
               <tr key={doc.id}>
                 <td data-label="Number"><strong>{doc.number}</strong></td>
-                <td data-label="Type">{doc.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
+                <td data-label="Type">{doc.type === "doc1" ? "Onboarding & Stock" : "General Maintenance"}</td>
                 <td data-label="Client">{doc.clientName}<br /><small>{doc.location}</small></td>
                 <td data-label="Status"><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
                 <td data-label="Current Department">{doc.currentDepartment}</td>

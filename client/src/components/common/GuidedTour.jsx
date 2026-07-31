@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const allSteps = [
   { selector: '[data-tour="dashboard"]', title: "Your dashboard", text: "This is your home workspace. It shows documents and work waiting for your role." },
-  { selector: '[data-tour="create"]', title: "Create new work", text: "Start a customer onboarding or maintenance request here when your role allows it." },
+  { selector: '[data-tour="create"]', title: "Create new work", text: "Start customer onboarding or General Maintenance here when your role allows it." },
   { selector: '[data-tour="stats"]', title: "Work at a glance", text: "These cards summarize pending, returned, completed, and visible documents." },
   { selector: '[data-tour="documents"]', title: "Find and process documents", text: "Search, filter, open, and continue documents assigned to your department." },
   { selector: '[data-tour="summaries"]', title: "Delivery note", text: "Open completed delivery notes and download the available documents." },

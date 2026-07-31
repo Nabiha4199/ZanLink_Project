@@ -98,7 +98,7 @@ function ReportTable({ rows, mode }) {
           {rows.map((request) => (
             <tr key={request.id}>
               <td data-label="Number"><strong>{request.number}</strong></td>
-              <td data-label="Type">{request.type === "doc1" ? "Onboarding & Stock" : "Maintenance"}</td>
+              <td data-label="Type">{request.type === "doc1" ? "Onboarding & Stock" : "General Maintenance"}</td>
               <td data-label="Client">{request.clientName}<br /><small>{request.location}</small></td>
               <td data-label="Status"><span className={`status ${statusClass(request.status)}`}>{request.status}</span></td>
               <td data-label="Department">{request.currentDepartment}</td>

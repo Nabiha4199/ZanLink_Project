@@ -150,14 +150,14 @@ STATE = {
                         "requestedQty": 600,
                         "issuedQty": 600,
                         "serialNumber": "3870",
-                        "purpose": "Maintenance",
+                        "purpose": "General Maintenance",
                         "unitCost": 0,
                     }
                 ],
             },
             "hod": {},
             "accounts": {},
-            "history": [history("u1", "Created maintenance request", "Waiting for HOD approval.")],
+            "history": [history("u1", "Created General Maintenance", "Waiting for HOD approval.")],
         },
     ],
     "summaries": [],
@@ -1298,7 +1298,7 @@ def create_maintenance():
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
     client, location, contact = registered_client_details(payload)
-    items = validate_items(payload.get("items", []), context="Maintenance material")
+    items = validate_items(payload.get("items", []), context="General Maintenance material")
     doc = {
         "id": str(uuid4()),
         "type": "maintenance",
@@ -1316,7 +1316,7 @@ def create_maintenance():
         "maintenance": {"fault": require_text(payload, "fault", "Fault report", max_length=800), "action": require_text(payload, "action", "Recommended action", max_length=800), "items": items},
         "hod": {},
         "accounts": {},
-        "history": [history(user["id"], "Created maintenance request", "Submitted to HOD.")],
+        "history": [history(user["id"], "Created General Maintenance", "Submitted to HOD.")],
     }
     STATE["documents"].insert(0, doc)
     notify("HOD", f"{doc['number']} is waiting for HOD approval.")
@@ -1411,8 +1411,8 @@ def accounts_submit(document_id: str):
     }
     if doc["type"] == "maintenance":
         set_route(doc, "Completed", "Engineer")
-        doc["history"].append(history(user["id"], "Maintenance billing added", "Maintenance completed and returned to Engineer."))
-        notify("Engineer", f"{doc['number']} maintenance request has been completed.")
+        doc["history"].append(history(user["id"], "General Maintenance billing added", "General Maintenance completed and returned to Engineer."))
+        notify("Engineer", f"{doc['number']} General Maintenance has been completed.")
     else:
         source_equipment = doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
         equipment = validate_items(source_equipment, require_cost=True, context="Sales equipment")
@@ -1503,7 +1503,7 @@ def hod_submit(document_id: str):
     require_department(user, "HOD")
     doc = find_document(document_id)
     if not doc or doc["type"] != "maintenance":
-        raise ValueError("Maintenance document not found")
+        raise ValueError("General Maintenance document not found")
     require_status(doc, "Pending HOD")
     payload = request.get_json(force=True)
     doc["hod"] = {
@@ -1513,8 +1513,8 @@ def hod_submit(document_id: str):
         "remarks": optional_text(payload, "remarks"),
     }
     set_route(doc, "Pending Accounts", "Accounts")
-    doc["history"].append(history(user["id"], "HOD approved maintenance", "Submitted to Accounts."))
-    notify("Accounts", f"{doc['number']} maintenance request is waiting for billing.")
+    doc["history"].append(history(user["id"], "HOD approved General Maintenance", "Submitted to Accounts."))
+    notify("Accounts", f"{doc['number']} General Maintenance is waiting for billing.")
     return jsonify(doc)
 
 
@@ -1558,11 +1558,11 @@ def download_maintenance_certificate(document_id: str):
     user = current_user()
     doc = find_document(document_id)
     if not doc or doc["type"] != "maintenance":
-        raise ValueError("Maintenance document not found")
+        raise ValueError("General Maintenance document not found")
     ensure_document_access(user, doc)
     if doc["status"] != "Completed":
-        raise ValueError("Certificate is available only after maintenance is completed")
-    filename = f"{doc['clientName'].replace(' ', '_')}_maintenance_certificate.pdf"
+        raise ValueError("The General Maintenance PDF is available only after completion")
+    filename = f"{doc['clientName'].replace(' ', '_')}_general_maintenance.pdf"
     return pdf_response(build_maintenance_certificate_pdf(doc), filename)
 
 
