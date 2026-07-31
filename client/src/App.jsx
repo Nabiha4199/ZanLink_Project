@@ -487,7 +487,13 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const billingDate = doc.accounts?.processedAt ? formatDate(doc.accounts.processedAt) : "-";
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
-      <header className="paper-head"><span className="paper-logo">zanlink</span><h2>Customer Onboarding Form</h2><span>Form No. {doc.number}</span></header>
+      <header className="paper-head onboarding-head">
+        <span className="paper-logo">zanlink</span>
+        <div className="onboarding-title">
+          <h2>Customer Onboarding Form</h2>
+          <span>Form No. {doc.number}</span>
+        </div>
+      </header>
       <h3>Customer Information</h3>
       <div className="check-row">
         <PaperCheck label="New Installation" active={(doc.serviceType || "new_installation") === "new_installation"} />
@@ -511,10 +517,10 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       </div>
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Prepared by" value={engineerName} /></div>
-      <h3>Management Approval</h3>
-      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.remarks || "-"} /></div>
       <h3>Admin Stock Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value={storeName} /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
+      <h3>Management Approval</h3>
+      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.remarks || "-"} /></div>
       <h3>Finance & Billing</h3>
       <div className="paper-fields two"><Field label="Billing Confirmation" value={isBilled ? "Billed" : "Not Billed"} /><Field label="User Created in System" value={isBilled ? "Yes" : "No"} /><Field label="Date" value={billingDate} /><Field label="Received by" value={engineerName} /></div>
       {doc.clientConfirmation?.dataUrl && (

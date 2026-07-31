@@ -626,6 +626,26 @@
   border: 0;
 }
 
+.paper-head.onboarding-head {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.onboarding-title {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.onboarding-title h2 {
+  white-space: nowrap;
+}
+
+.onboarding-title span {
+  color: #66717f;
+  font-size: 14px;
+}
+
 .paper-logo {
   color: #aab3bf;
   font-size: 32px;
