@@ -42,7 +42,7 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
         <div className="filter-heading"><div><strong>{activeStatLabel}</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
         <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">General Maintenance</option></select>
-        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
+        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Client Confirmation", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
         <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
       </section>
       <DocumentTable user={user} documents={visibleDocuments} onOpen={onOpen} onShowWorkflow={setWorkflowDoc} />
@@ -106,6 +106,7 @@ function WorkflowTracker({ type, status }) {
   ] : [
     ["Engineer Section", null],
     ["Sales Section", "Pending Sales"],
+    ["Client Confirmation", "Pending Client Confirmation"],
     ["Accounts Section", "Pending Accounts"],
     ["Store Section", "Pending Store"],
     ["Management", "Pending Management"],
