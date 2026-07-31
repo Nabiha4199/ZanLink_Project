@@ -5,7 +5,7 @@ const allSteps = [
   { selector: '[data-tour="create"]', title: "Create new work", text: "Start a customer onboarding or maintenance request here when your role allows it." },
   { selector: '[data-tour="stats"]', title: "Work at a glance", text: "These cards summarize pending, returned, completed, and visible documents." },
   { selector: '[data-tour="documents"]', title: "Find and process documents", text: "Search, filter, open, and continue documents assigned to your department." },
-  { selector: '[data-tour="summaries"]', title: "Client summaries", text: "Open completed client summaries and download the available documents." },
+  { selector: '[data-tour="summaries"]', title: "Delivery note", text: "Open completed delivery notes and download the available documents." },
   { selector: '[data-tour="reports"]', title: "Reports", text: "Review workflow reporting and overall activity from this section." },
   { selector: '[data-tour="account"]', title: "Your account", text: "Your assigned role and department control which information and actions you can access." },
 ];

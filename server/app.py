@@ -110,7 +110,7 @@ STATE = {
             "createdBy": "u1",
             "createdAt": now_iso(),
             "engineer": {"notes": "Install router, outdoor radio and cabling for new client."},
-            "sales": {"amount": 1250000, "packageCost": 1150000, "remarks": "Business 50 Mbps package."},
+            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "remarks": "Business 50 Mbps package."},
             "accounts": {"billingAmount": 1250000, "invoiceNumber": "INV-2044", "remarks": "Invoice prepared."},
             "store": {
                 "confirmed": False,
@@ -466,6 +466,8 @@ def generate_summary(doc: dict) -> dict:
 
     items = deepcopy(doc["store"]["items"])
     subtotal = sum(float(item.get("issuedQty") or 0) * float(item.get("unitCost") or 0) for item in items)
+    labor_charge = float(doc.get("sales", {}).get("laborCharge") or 0)
+    billed_amount = float(doc.get("accounts", {}).get("billingAmount") or 0)
     created_by = find_user(doc.get("createdBy"))
     summary = {
         "id": str(uuid4()),
@@ -481,8 +483,9 @@ def generate_summary(doc: dict) -> dict:
         "currency": doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS",
         "items": items,
         "subtotal": subtotal,
+        "installationCost": labor_charge,
         "transportCost": 0,
-        "grandTotal": subtotal,
+        "grandTotal": billed_amount,
         "zanlinkStaff": created_by["name"] if created_by else "",
         "terms": "If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.",
         "createdAt": now_iso(),
@@ -651,14 +654,21 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     currency = doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS"
     equipment_cost = float(doc.get("sales", {}).get("packageCost") or 0)
     one_time_total = float(doc.get("sales", {}).get("oneTimeTotal") or 0) or (
-        float(doc.get("sales", {}).get("amount") or 0)
+        float(doc.get("sales", {}).get("laborCharge", doc.get("sales", {}).get("amount")) or 0)
         + equipment_cost
         + float(doc.get("sales", {}).get("additionalNpr") or 0)
     )
     grand_total = float(doc.get("sales", {}).get("grandTotal") or 0) or (
         one_time_total + float(doc.get("sales", {}).get("mbr") or 0)
     )
-    draw_label_value(pdf, "Installation Cost", money_text(doc.get("sales", {}).get("amount"), doc.get("sales", {}).get("currency") or "TZS"), 85 * mm, y - 18 * mm, 52 * mm)
+    draw_label_value(
+        pdf,
+        "Installation Cost/Labor Charge",
+        money_text(doc.get("sales", {}).get("laborCharge", doc.get("sales", {}).get("amount")), doc.get("sales", {}).get("currency") or "TZS"),
+        85 * mm,
+        y - 18 * mm,
+        52 * mm,
+    )
     draw_label_value(pdf, "MBR", money_text(doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount")), currency), 143 * mm, y - 18 * mm, 45 * mm)
     draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
     draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
@@ -781,11 +791,12 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
     pdf.drawRightString(width - 22 * mm, height - 32 * mm, "E-Mail: info-zanlink@liquidtelecom.co.tz")
 
     currency = summary.get("currency") or (doc or {}).get("accounts", {}).get("currency") or "TZS"
+    installation_cost = float(summary.get("installationCost") or 0)
     info_rows = [
         ["Sheet No.", summary["number"], "Source Document", summary.get("sourceDocumentNumber") or (doc or {}).get("number", "")],
         ["Customer", summary.get("customerName") or (doc or {}).get("clientName", ""), "Location", summary.get("customerLocation") or (doc or {}).get("location", "")],
         ["Date", datetime.fromisoformat(summary["createdAt"]).strftime("%d/%m/%Y") if summary.get("createdAt") else datetime.now().strftime("%d/%m/%Y"), "Invoice Number", summary.get("invoiceNumber", "")],
-        ["Billing Amount", money_text(summary.get("billingAmount"), currency), "Contact", summary.get("customerContact") or (doc or {}).get("contact", "")],
+        ["Billed Amount", money_text(summary.get("billingAmount"), currency), "Contact", summary.get("customerContact") or (doc or {}).get("contact", "")],
     ]
     info_table = Table(info_rows, colWidths=[28 * mm, 61 * mm, 28 * mm, 61 * mm])
     info_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.black), ("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold")]))
@@ -813,6 +824,7 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
     rows.extend(
         [
             ["", "", "", "", "", "Sub Total:", money_text(summary.get("subtotal"), currency)],
+            ["", "", "", "", "", "Installation Cost/Labor Charge:", money_text(installation_cost, currency)],
             ["", "", "", "", "", "Transportation Cost:", money_text(summary.get("transportCost"), currency)],
             ["", "", "", "", "", "Grand Total Cost:", money_text(summary.get("grandTotal"), currency)],
         ]
@@ -824,7 +836,7 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (5, -3), (-1, -1), "Helvetica-Bold"),
+                ("FONTNAME", (5, -4), (-1, -1), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, -1), 7),
                 ("ALIGN", (5, 1), (6, -1), "RIGHT"),
             ]
@@ -1341,10 +1353,11 @@ def sales_submit(document_id: str):
         store_item["costCurrency"] = currency
         sales_item["costCurrency"] = currency
     package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
-    installation_cost = require_number(payload, "amount", "Installation cost", minimum=0, allow_zero=False)
+    labor_charge = require_number(payload, "amount", "Installation cost/labor charge", minimum=0, allow_zero=False)
     additional_npr = require_number(payload, "additionalNpr", "Additional NPR", minimum=0)
     mbr = require_number(payload, "mbr", "MBR", minimum=0)
-    one_time_total = installation_cost + package_cost + additional_npr
+    total_sales_cost = labor_charge + package_cost
+    one_time_total = total_sales_cost + additional_npr
     grand_total = one_time_total + mbr
     submitted_at = datetime.now(timezone.utc)
     doc["clientName"] = client_name
@@ -1354,7 +1367,8 @@ def sales_submit(document_id: str):
         "clientName": client_name,
         "location": location,
         "surveyFormNo": require_text(payload, "surveyFormNo", "Survey form number"),
-        "amount": installation_cost,
+        "amount": total_sales_cost,
+        "laborCharge": labor_charge,
         "packageCost": package_cost,
         "additionalNpr": additional_npr,
         "oneTimeTotal": one_time_total,
@@ -1460,7 +1474,7 @@ def store_submit(document_id: str):
         doc["workflowCompletedAt"] = now_iso()
         set_route(doc, "Pending Management", "Management")
         generate_summary(doc)
-        doc["history"].append(history(user["id"], "Store completed the workflow", "Client summary generated; Management approval remains optional."))
+        doc["history"].append(history(user["id"], "Store completed the workflow", "Delivery note generated; Management approval remains optional."))
         notify("Management", f"{doc['number']} is complete and awaiting optional approval.")
         notify("Engineer", f"{doc['number']} is complete; Management approval is still pending.")
     else:
@@ -1504,20 +1518,20 @@ def hod_submit(document_id: str):
 
 @app.get("/api/summaries")
 def summaries():
-    current_user()
+    user = current_user()
+    require_system_admin(user)
     return jsonify(STATE["summaries"])
 
 
 @app.get("/api/summaries/<summary_id>/download")
 def download_summary(summary_id: str):
     user = current_user()
+    require_system_admin(user)
     summary = find_summary(summary_id)
     if not summary:
-        raise ValueError("Client summary not found")
+        raise ValueError("Delivery note not found")
     doc = find_document(summary["sourceDocumentId"])
-    if doc and user["department"] != "Accounts" and user["role"] != "System Admin":
-        ensure_document_access(user, doc)
-    filename = f"{(summary.get('customerName') or 'client').replace(' ', '_')}_client_summary.pdf"
+    filename = f"{(summary.get('customerName') or 'client').replace(' ', '_')}_delivery_note.pdf"
     return pdf_response(build_client_summary_pdf(summary, doc), filename)
 
 

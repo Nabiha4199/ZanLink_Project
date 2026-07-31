@@ -3,7 +3,7 @@ import { api } from "../services/api";
 import { money } from "../utils/formatters";
 
 export default function ClientSummariesPage({ user, summaries, documents, showError }) {
-  if (!summaries.length) return <div className="panel empty">No client summaries generated yet.</div>;
+  if (!summaries.length) return <div className="panel empty">No delivery notes generated yet.</div>;
 
   return (
     <>
@@ -164,8 +164,8 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
 
       <div className="topbar">
         <div className="page-title">
-          <h1>Client Summaries</h1>
-          <p>Completed, read-only delivery records generated from approved Document 1 data.</p>
+          <h1>Delivery Note</h1>
+          <p>Delivery Note</p>
         </div>
       </div>
 
@@ -187,12 +187,19 @@ function ClientSummary({ user, summary, doc, showError }) {
   const [equipmentSearch, setEquipmentSearch] = useState("");
   const customerName = summary.customerName || doc?.clientName || "";
   const printId = `client-summary-${summary.id}`;
-  const subtotal = items.reduce(
+  const calculatedEquipmentTotal = items.reduce(
     (total, item) => total + Number(item.issuedQty || 0) * Number(item.unitCost || 0),
     0
   );
+  const subtotal = Number(summary.subtotal ?? calculatedEquipmentTotal);
   const transportCost = Number(summary.transportCost || 0);
-  const grandTotal = subtotal + transportCost;
+  const billedAmount = Number(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0);
+  const installationCost = Number(
+    summary.installationCost
+      ?? doc?.sales?.laborCharge
+      ?? Math.max(billedAmount - subtotal - transportCost, 0)
+  );
+  const grandTotal = Number((summary.grandTotal ?? billedAmount) || (subtotal + installationCost + transportCost));
   const currency = summary.currency || doc?.accounts?.currency || "TZS";
 
   const visibleItems = items.filter((item) => {
@@ -211,7 +218,7 @@ function ClientSummary({ user, summary, doc, showError }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${customerName || "client"}_client_summary.pdf`;
+      link.download = `${customerName || "client"}_delivery_note.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -276,8 +283,8 @@ function ClientSummary({ user, summary, doc, showError }) {
           <tr>
             <th>Invoice Number</th>
             <td>{summary.invoiceNumber || doc?.accounts?.invoiceNumber}</td>
-            <th>Accounts Billing Amount</th>
-            <td>{money(summary.billingAmount ?? doc?.accounts?.billingAmount ?? 0, currency)}</td>
+            <th>Billed Amount</th>
+            <td>{money(billedAmount, currency)}</td>
           </tr>
           <tr>
             <th>Contact</th>
@@ -342,6 +349,13 @@ function ClientSummary({ user, summary, doc, showError }) {
 
             <tr className="summary-total-row">
               <td colSpan="6">
+                <strong>Installation Cost/Labor Charge:</strong>
+              </td>
+              <td>{money(installationCost, currency)}</td>
+            </tr>
+
+            <tr className="summary-total-row">
+              <td colSpan="6">
                 <strong>Transportation Cost:</strong>
               </td>
               <td>{money(transportCost, currency)}</td>
@@ -381,10 +395,10 @@ function ClientSummary({ user, summary, doc, showError }) {
 
       <div className="button-row no-print">
         <button className="btn secondary" onClick={download}>
-          Download Client Summary PDF
+          Download Delivery Note PDF
         </button>
         <button className="btn secondary" onClick={printSummary}>
-          Print This Summary
+          Print Delivery Note
         </button>
       </div>
     </article>

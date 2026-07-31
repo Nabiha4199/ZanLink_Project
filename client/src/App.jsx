@@ -34,7 +34,7 @@ function App() {
     const [accountData, docs, summaryData, reportData, clientData, userData] = await Promise.all([
       api.account(user),
       api.documents(user, nextFilters),
-      api.summaries(user),
+      user.role === "System Admin" ? api.summaries(user) : Promise.resolve([]),
       api.reports(user),
       api.clients(user),
       user.role === "System Admin" ? api.users(user) : Promise.resolve([]),
@@ -178,7 +178,7 @@ function App() {
           <ClientsPage clients={clients} onRegister={registerClient} />
         ) : view === "users" && user.role === "System Admin" ? (
           <UserManagementPage currentUser={user} users={users} onCreateUser={createUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} />
-        ) : view === "summaries" ? (
+        ) : view === "summaries" && user.role === "System Admin" ? (
           <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
           <ReportsPage reports={reports} />
@@ -438,9 +438,10 @@ function CompletedEngineerDocuments({ user, doc }) {
 function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const equipmentCost = Number(doc.sales?.packageCost || 0);
   const oneTimeTotal = doc.sales?.oneTimeTotal ?? (
-    Number(doc.sales?.amount || 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
+    Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
   );
   const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mbr || 0));
+  const laborCharge = Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0);
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head"><span className="paper-logo">zanlink</span><h2>Customer Onboarding Form</h2><span>Form No. {doc.number}</span></header>
@@ -455,7 +456,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       <div className="paper-fields">
         <Field label="Client Name" value={doc.clientName} />
         <Field label="Location" value={doc.location} />
-        <Field label="Installation Cost" value={money(doc.sales?.amount, doc.sales?.currency)} />
+        <Field label="Installation Cost/Labor Charge" value={money(laborCharge, doc.sales?.currency)} />
         <Field label="Equipment Cost" value={money(equipmentCost, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Additional NPR" value={money(doc.sales?.additionalNpr, doc.sales?.currency)} />
         <Field label="Total One-time Cost" value={money(oneTimeTotal, doc.sales?.currency)} />
@@ -572,7 +573,9 @@ function Doc1Actions({ user, doc, run }) {
   const engineerEquipment = doc.store?.items || [];
   const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
-  const oneTimeTotal = Number(sales.amount || 0) + equipmentTotal + Number(sales.additionalNpr || 0);
+  const laborCharge = Number(sales.amount || 0);
+  const salesTotal = laborCharge + equipmentTotal;
+  const oneTimeTotal = salesTotal + Number(sales.additionalNpr || 0);
   const grandTotal = oneTimeTotal + Number(sales.mbr || 0);
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
     ...item,
@@ -592,8 +595,9 @@ function Doc1Actions({ user, doc, run }) {
           <label>Location<TanzaniaLocationField disabled={!salesOpen} value={sales.location} onChange={(location) => setSales({ ...sales, location })} /></label>
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
           <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
-          {numberInput("Installation Cost", "amount", sales, setSales, !salesOpen)}
-          <AutoTotal label="Equipment Cost" value={equipmentTotal} currency={sales.currency} />
+          {numberInput("Installation Cost/Labor Charge", "amount", sales, setSales, !salesOpen)}
+          <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
+          <p><strong>Total Cost from Sales</strong><br />{money(salesTotal, sales.currency)}</p>
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
           <AutoTotal label="Total One-time Cost" value={oneTimeTotal} currency={sales.currency} />
           {textInput("Subscription", "subscription", sales, setSales, !salesOpen)}
