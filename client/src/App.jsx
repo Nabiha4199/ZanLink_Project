@@ -334,6 +334,7 @@ function DocumentDetail({ user, doc, onBack, run }) {
   return (
     <>
       <div className="topbar"><div className="page-title"><h1>{doc.number}</h1><p>{doc.clientName} / {doc.service}</p></div><button className="btn secondary" onClick={onBack}>Back</button></div>
+      {doc.type === "doc1" && <SalesCostSummary doc={doc} />}
       {managementReview ? (
         <ManagementReview user={user} doc={doc} run={run} />
       ) : engineerCompleted ? (
@@ -348,6 +349,23 @@ function DocumentDetail({ user, doc, onBack, run }) {
         </>
       )}
     </>
+  );
+}
+
+function SalesCostSummary({ doc }) {
+  const laborCharge = Number(doc.sales?.laborCharge ?? 0);
+  const equipmentCost = Number(doc.sales?.packageCost ?? 0);
+  const totalSalesCost = Number(doc.sales?.amount ?? (laborCharge + equipmentCost));
+  if (!doc.sales || (!laborCharge && !equipmentCost && !totalSalesCost)) return null;
+  return (
+    <section className="panel">
+      <div className="section-title"><h2>Sales Cost Summary</h2></div>
+      <div className="form-grid">
+        <p><strong>Installation Cost / Labor Charge</strong><br />{money(laborCharge, doc.sales?.currency)}</p>
+        <p><strong>Equipment Cost</strong><br />{money(equipmentCost, doc.sales?.currency)}</p>
+        <p><strong>Total Sales Cost</strong><br />{money(totalSalesCost, doc.sales?.currency)}</p>
+      </div>
+    </section>
   );
 }
 
@@ -547,7 +565,7 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
 
 function Doc1Actions({ user, doc, run }) {
   const storeManager = user.department === "Store" || ["Store", "Store Manager"].includes(user.role);
-  const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales"].includes(doc.status);
+  const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales", "Pending Accounts"].includes(doc.status);
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
   const managementOpen = canAct(user, "Management") && doc.status === "Pending Management";
@@ -557,7 +575,7 @@ function Doc1Actions({ user, doc, run }) {
     clientName: doc.sales?.clientName || doc.clientName || "",
     location: doc.sales?.location || doc.location || "",
     surveyFormNo: doc.sales?.surveyFormNo || doc.number || "",
-    amount: doc.sales?.amount || "",
+    amount: doc.sales?.laborCharge ?? doc.sales?.amount ?? "",
     packageCost: doc.sales?.packageCost || "",
     additionalNpr: doc.sales?.additionalNpr || "",
     subscription: doc.sales?.subscription || doc.sales?.remarks || doc.service || "",
@@ -573,8 +591,8 @@ function Doc1Actions({ user, doc, run }) {
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
   const laborCharge = Number(sales.amount || 0);
   const salesTotal = laborCharge + equipmentTotal;
-  const oneTimeTotal = Number(sales.amount || 0) + equipmentTotal + Number(sales.additionalNpr || 0);
-  const grandTotal = oneTimeTotal + Number(sales.mbr || 0);
+  const oneTimeTotal = salesTotal;
+  const grandTotal = salesTotal;
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
     ...item,
     issuedQty: storeOpen && Number(item.issuedQty || 0) === 0 ? Number(item.requestedQty || 0) : Number(item.issuedQty || 0),
@@ -586,7 +604,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      <ActionPanel enabled={salesOpen} actionLabel="Submit to Accounts" onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), "Moved to Accounts.")}>
+      <ActionPanel enabled={salesOpen} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -597,10 +615,10 @@ function Doc1Actions({ user, doc, run }) {
           <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
           <p><strong>Total Cost from Sales</strong><br />{money(salesTotal, sales.currency)}</p>
           {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
-          <AutoTotal label="Total One-time Cost" value={oneTimeTotal} currency={sales.currency} />
+          <AutoTotal label="Total Sales Cost (Labor + Equipment)" value={salesTotal} currency={sales.currency} />
           {subscriptionInput(sales, setSales, !salesOpen)}
           {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
-          <AutoTotal label="First Invoice Total" value={grandTotal} currency={sales.currency} />
+          <AutoTotal label="Total Sales Cost" value={grandTotal} currency={sales.currency} />
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
           <label>Time<input readOnly value={formatTime(sales.requestedTime)} /></label>
@@ -609,8 +627,8 @@ function Doc1Actions({ user, doc, run }) {
       </ActionPanel>
       {!salesOnly && (
         <>
-          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, { ...accounts, billingAmount: doc.sales?.grandTotal || doc.sales?.amount || 0 }), "Moved to Store.")}>
-            <div className="form-grid"><AutoTotal label="Billing Amount" value={doc.sales?.grandTotal || doc.sales?.amount || 0} currency={doc.sales?.currency} />{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
@@ -618,7 +636,7 @@ function Doc1Actions({ user, doc, run }) {
                 <OnboardingPreview doc={doc} printId={storeOnboardingPrintId} extraClass="print-only-document" />
                 <StockRequisitionPreview doc={{ ...doc, store: { ...doc.store, items } }} printId={storeStockPrintId} extraClass="print-only-document" />
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
-                {!storeManager && <div className="form-grid store-remarks-grid"><p><strong>Sales Amount</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label><div className="store-print-actions no-print">
+                {!storeManager && <div className="form-grid store-remarks-grid"><p><strong>Total Sales Cost</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label><div className="store-print-actions no-print">
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
                   <button className="btn" type="button" onClick={() => printElementsByIds([storeOnboardingPrintId, storeStockPrintId])}>Print All</button>

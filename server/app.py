@@ -110,7 +110,7 @@ STATE = {
             "createdBy": "u1",
             "createdAt": now_iso(),
             "engineer": {"notes": "Install router, outdoor radio and cabling for new client."},
-            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "remarks": "Business 50 Mbps package."},
+            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "oneTimeTotal": 1250000, "grandTotal": 1250000, "remarks": "Business 50 Mbps package."},
             "accounts": {"billingAmount": 1250000, "invoiceNumber": "INV-2044", "remarks": "Invoice prepared."},
             "store": {
                 "confirmed": False,
@@ -1330,7 +1330,8 @@ def sales_submit(document_id: str):
     doc = find_document(document_id)
     if not doc or doc["type"] != "doc1":
         raise ValueError("Document 1 not found")
-    require_status(doc, "Pending Sales", "Returned to Sales")
+    was_submitted = doc.get("status") == "Pending Accounts"
+    require_status(doc, "Pending Sales", "Returned to Sales", "Pending Accounts")
     payload = request.get_json(force=True)
     client_name = require_text(payload, "clientName", "Client name")
     location = require_text(payload, "location", "Location")
@@ -1354,8 +1355,8 @@ def sales_submit(document_id: str):
     additional_npr = require_number(payload, "additionalNpr", "Additional NPR", minimum=0)
     mbr = require_number(payload, "mbr", "MBR", minimum=0)
     total_sales_cost = labor_charge + package_cost
-    one_time_total = total_sales_cost + additional_npr
-    grand_total = one_time_total + mbr
+    one_time_total = total_sales_cost
+    grand_total = total_sales_cost
     submitted_at = datetime.now(timezone(timedelta(hours=3)))
     doc["clientName"] = client_name
     doc["location"] = location
@@ -1380,7 +1381,9 @@ def sales_submit(document_id: str):
         "remarks": subscription,
     }
     set_route(doc, "Pending Accounts", "Accounts")
-    doc["history"].append(history(user["id"], "Sales amount added", "Submitted to Accounts."))
+    action = "Sales cost updated" if was_submitted else "Sales cost submitted"
+    detail = "Labor charge and equipment cost were updated for Accounts." if was_submitted else "Labor charge and equipment cost were submitted to Accounts."
+    doc["history"].append(history(user["id"], action, detail))
     notify("Accounts", f"{doc['number']} is waiting for billing.")
     return jsonify(doc)
 
@@ -1397,11 +1400,7 @@ def accounts_submit(document_id: str):
     else:
         require_status(doc, "Pending Accounts")
     payload = request.get_json(force=True)
-    billing_amount = (
-        require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=True)
-        if doc["type"] == "maintenance"
-        else float(doc.get("sales", {}).get("grandTotal") or doc.get("sales", {}).get("amount") or 0)
-    )
+    billing_amount = require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=doc["type"] == "maintenance")
     doc["accounts"] = {
         "billingAmount": billing_amount,
         "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
@@ -1426,7 +1425,13 @@ def accounts_submit(document_id: str):
             store_item["costCurrency"] = sales_item.get("costCurrency") or doc.get("sales", {}).get("currency") or doc["accounts"]["currency"]
         doc["store"]["items"] = store_items
         doc.setdefault("sales", {})["equipment"] = deepcopy(store_items)
-        doc["sales"]["packageCost"] = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in store_items)
+        package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in store_items)
+        labor_charge = float(doc["sales"].get("laborCharge") or 0)
+        total_sales_cost = labor_charge + package_cost
+        doc["sales"]["packageCost"] = package_cost
+        doc["sales"]["amount"] = total_sales_cost
+        doc["sales"]["oneTimeTotal"] = total_sales_cost
+        doc["sales"]["grandTotal"] = total_sales_cost
         set_route(doc, "Pending Store", "Store")
         doc["history"].append(history(user["id"], "Billing added", "Submitted to Store."))
         notify("Store", f"{doc['number']} is waiting for stock validation.")
@@ -1457,7 +1462,7 @@ def store_submit(document_id: str):
         if issued_qty > float(item.get("requestedQty") or 0):
             raise ValueError(f"Equipment {index} issued quantity cannot exceed requested quantity")
         item["issuedQty"] = issued_qty
-    expected_total = float(doc.get("sales", {}).get("grandTotal") or doc.get("sales", {}).get("amount") or 0)
+    expected_total = float(doc.get("sales", {}).get("amount") or 0)
     matches = expected_total == float(doc.get("accounts", {}).get("billingAmount") or 0)
     doc["store"] = {
         "confirmed": matches,
