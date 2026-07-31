@@ -372,7 +372,7 @@ function MaintenanceCertificate({ user, doc }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${doc.clientName}_maintenance_certificate.pdf`;
+    link.download = `${doc.clientName}_general_maintenance.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -383,12 +383,12 @@ function MaintenanceCertificate({ user, doc }) {
     <section className="final-documents">
       <div className="panel final-toolbar">
         <div>
-          <h2>Certificate of Completion</h2>
-          <p>{doc.clientName} maintenance has been completed and certified.</p>
+          <h2>General Maintenance</h2>
+          <p>{doc.clientName} general maintenance has been completed.</p>
         </div>
         <div className="button-row">
-          <button className="btn" onClick={download}>Download Certificate PDF</button>
-          <button className="btn secondary" onClick={() => printElementById(printId)}>Print Maintenance Doc</button>
+          <button className="btn" onClick={download}>Download General Maintenance PDF</button>
+          <button className="btn secondary" onClick={() => printElementById(printId)}>Print General Maintenance</button>
         </div>
       </div>
       <MaintenanceDocumentPreview doc={doc} printId={printId} certificate />
@@ -515,13 +515,13 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
       <div className="certificate-logo">zanlink</div>
       <div className="certificate-meta">
         <span>Date: {formatDate(new Date())}</span>
-        <span>{certificate ? "Certificate" : "Request"} No: {doc.number}</span>
+        <span>General Maintenance No: {doc.number}</span>
       </div>
-      <h2>{certificate ? "Certificate of Completion" : "Maintenance Request"}</h2>
+      <h2>General Maintenance</h2>
       <p className="certificate-intro">
         {certificate
-          ? `This is to confirm and certify that the job was done successfully at ${doc.clientName} and the below materials were issued through requisition no. ${doc.number}.`
-          : `This maintenance request records the reported fault and recommended action for ${doc.clientName}.`}
+          ? `This confirms that the general maintenance work was completed successfully at ${doc.clientName} and the materials below were issued through requisition no. ${doc.number}.`
+          : `This general maintenance document records the reported fault and recommended action for ${doc.clientName}.`}
       </p>
       <p><strong>Site Name:</strong> {doc.clientName}</p>
       <p><strong>Location:</strong> {doc.location}</p>
@@ -538,10 +538,8 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
         </tbody>
       </table>
       <div className="certificate-signoff">
-        <strong>{certificate ? "Certified by Head of Department" : "HOD Review"}</strong>
-        <span>Name: {doc.hod?.approvedBy ? "Head of Department" : "----------------"}</span>
-        <span>Signature: ----------------</span>
-        <span>Date: {formatDate(new Date())}</span>
+        <strong>Head of Department</strong>
+        <span>Name: {doc.hod?.approvedByName || (doc.hod?.approvedBy ? "Head of Department" : "Pending approval")}</span>
       </div>
     </article>
   );
@@ -651,11 +649,22 @@ function MaintenanceActions({ user, doc, run }) {
       <section className="panel"><h2>Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
       {!accountsOnly && (
         <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
-          <MaintenanceDocumentPreview doc={{ ...doc, hod: { ...doc.hod, remarks: hodRemarks } }} printId={hodPrintId} extraClass="print-only-document" />
+          <MaintenanceDocumentPreview
+            doc={{
+              ...doc,
+              hod: {
+                ...doc.hod,
+                approvedByName: doc.hod?.approvedByName || (canAct(user, "HOD") ? user.name : undefined),
+                remarks: hodRemarks,
+              },
+            }}
+            printId={hodPrintId}
+            extraClass="print-only-document"
+          />
           <div className="hod-notes-area">
             <label>HOD Notes<textarea disabled={!hodOpen} value={hodRemarks} onChange={(e) => setHodRemarks(e.target.value)} /></label>
             <div className="section-print-actions no-print">
-              <button className="btn secondary" type="button" onClick={() => printElementById(hodPrintId)}>Print Maintenance Doc</button>
+              <button className="btn secondary" type="button" onClick={() => printElementById(hodPrintId)}>Print General Maintenance</button>
             </div>
           </div>
         </ActionPanel>

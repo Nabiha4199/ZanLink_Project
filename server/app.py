@@ -883,13 +883,13 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
     pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica", 8)
     pdf.drawString(22 * mm, height - 44 * mm, f"Date: {datetime.now().strftime('%d/%m/%Y')}")
-    pdf.drawRightString(width - 22 * mm, height - 44 * mm, f"Certificate No: Zanlink/{doc['number']}")
+    pdf.drawRightString(width - 22 * mm, height - 44 * mm, f"General Maintenance No: Zanlink/{doc['number']}")
 
     pdf.setFont("Helvetica-Bold", 12)
-    pdf.drawCentredString(width / 2, height - 58 * mm, "CERTIFICATE OF COMPLETION")
+    pdf.drawCentredString(width / 2, height - 58 * mm, "GENERAL MAINTENANCE")
     pdf.setFont("Helvetica", 9)
     text = (
-        f"This is to confirm and certify that the job was done successfully at {doc.get('clientName', '')} "
+        f"This confirms that the general maintenance work was completed successfully at {doc.get('clientName', '')} "
         f"and the below materials were issued through requisition no. {doc['number']}."
     )
     wrapped = [text[i : i + 95] for i in range(0, len(text), 95)]
@@ -934,14 +934,11 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
     pdf.setFont("Helvetica", 8)
     pdf.drawString(22 * mm, y, "The site has been inspected for the completion of the job carried.")
     pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(22 * mm, y - 12 * mm, "Certified by Head of Department")
+    pdf.drawString(22 * mm, y - 12 * mm, "Head of Department")
     pdf.setFont("Helvetica", 9)
-    pdf.drawString(22 * mm, y - 24 * mm, "Name: ----------------")
-    pdf.drawString(22 * mm, y - 36 * mm, "Signature: ------------")
-    pdf.drawString(22 * mm, y - 48 * mm, "Date: -----------------")
     approved_by = find_user(doc.get("hod", {}).get("approvedBy"))
-    pdf.drawString(70 * mm, y - 24 * mm, approved_by["name"] if approved_by else "Head of Department")
-    pdf.drawString(70 * mm, y - 48 * mm, datetime.now().strftime("%d/%m/%Y"))
+    approved_by_name = doc.get("hod", {}).get("approvedByName") or (approved_by["name"] if approved_by else "Pending approval")
+    pdf.drawString(22 * mm, y - 24 * mm, f"Name: {approved_by_name}")
 
     pdf.showPage()
     pdf.save()
@@ -1509,7 +1506,12 @@ def hod_submit(document_id: str):
         raise ValueError("Maintenance document not found")
     require_status(doc, "Pending HOD")
     payload = request.get_json(force=True)
-    doc["hod"] = {"approvedBy": user["id"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
+    doc["hod"] = {
+        "approvedBy": user["id"],
+        "approvedByName": user["name"],
+        "approvedAt": now_iso(),
+        "remarks": optional_text(payload, "remarks"),
+    }
     set_route(doc, "Pending Accounts", "Accounts")
     doc["history"].append(history(user["id"], "HOD approved maintenance", "Submitted to Accounts."))
     notify("Accounts", f"{doc['number']} maintenance request is waiting for billing.")
