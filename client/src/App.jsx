@@ -438,7 +438,7 @@ function CompletedEngineerDocuments({ user, doc }) {
 function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const equipmentCost = Number(doc.sales?.packageCost || 0);
   const oneTimeTotal = doc.sales?.oneTimeTotal ?? (
-    Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
+    Number(doc.sales?.amount || 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
   );
   const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mbr || 0));
   const laborCharge = Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0);
@@ -575,7 +575,7 @@ function Doc1Actions({ user, doc, run }) {
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
   const laborCharge = Number(sales.amount || 0);
   const salesTotal = laborCharge + equipmentTotal;
-  const oneTimeTotal = salesTotal + Number(sales.additionalNpr || 0);
+  const oneTimeTotal = Number(sales.amount || 0) + equipmentTotal + Number(sales.additionalNpr || 0);
   const grandTotal = oneTimeTotal + Number(sales.mbr || 0);
   const [items, setItems] = useState(() => (doc.store?.items || []).map((item) => ({
     ...item,

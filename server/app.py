@@ -654,7 +654,7 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     currency = doc.get("accounts", {}).get("currency") or doc.get("sales", {}).get("currency") or "TZS"
     equipment_cost = float(doc.get("sales", {}).get("packageCost") or 0)
     one_time_total = float(doc.get("sales", {}).get("oneTimeTotal") or 0) or (
-        float(doc.get("sales", {}).get("laborCharge", doc.get("sales", {}).get("amount")) or 0)
+        float(doc.get("sales", {}).get("amount") or 0)
         + equipment_cost
         + float(doc.get("sales", {}).get("additionalNpr") or 0)
     )
