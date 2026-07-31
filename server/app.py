@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import base64
 import re
 import secrets
 import smtplib
@@ -23,6 +24,7 @@ except ModuleNotFoundError:
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table
 from reportlab.platypus import TableStyle
@@ -45,6 +47,9 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+USD_TO_TZS_RATE = float(os.getenv("USD_TO_TZS_RATE", "2500"))
+CLIENT_CONFIRMATION_USD_LIMIT = 400
+MAX_CONFIRMATION_IMAGE_BYTES = 5 * 1024 * 1024
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
@@ -103,6 +108,53 @@ def user_display_name(user_id: str | None, fallback: str = "") -> str:
 
 def history(user_id: str, action: str, note: str = "", user_name: str | None = None) -> dict:
     return {"id": str(uuid4()), "at": now_iso(), "userId": user_id, "userName": user_name or user_display_name(user_id), "action": action, "note": note}
+
+
+def confirmation_owner(equipment: list[dict], currency: str) -> str:
+    limit = CLIENT_CONFIRMATION_USD_LIMIT if currency == "USD" else CLIENT_CONFIRMATION_USD_LIMIT * USD_TO_TZS_RATE
+    equipment_total = sum(
+        float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0)
+        for item in equipment
+    )
+    return "Engineer" if equipment_total < limit else "Sales"
+
+
+def require_confirmation_image(payload: dict) -> dict:
+    upload = payload.get("clientConfirmation")
+    if not isinstance(upload, dict):
+        raise ValueError("Client email confirmation screenshot is required")
+    name = require_text(upload, "name", "Confirmation file name", max_length=180)
+    data_url = require_text(upload, "dataUrl", "Confirmation image", max_length=8_000_000)
+    match = re.fullmatch(r"data:(image/(?:png|jpeg));base64,([A-Za-z0-9+/=\s]+)", data_url)
+    if not match:
+        raise ValueError("Confirmation screenshot must be a PNG or JPEG image")
+    try:
+        raw = base64.b64decode(match.group(2), validate=True)
+    except ValueError:
+        raise ValueError("Confirmation screenshot is invalid")
+    if not raw or len(raw) > MAX_CONFIRMATION_IMAGE_BYTES:
+        raise ValueError("Confirmation screenshot must be 5 MB or smaller")
+    return {"name": name, "mimeType": match.group(1), "dataUrl": data_url, "size": len(raw)}
+
+
+def draw_confirmation_page(pdf: canvas.Canvas, doc: dict) -> None:
+    confirmation = doc.get("clientConfirmation")
+    if not confirmation:
+        return
+    pdf.showPage()
+    width, height = A4
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawCentredString(width / 2, height - 25 * mm, "CLIENT EMAIL CONFIRMATION")
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(20 * mm, height - 35 * mm, f"Uploaded by: {confirmation.get('uploadedByName', '-')}")
+    pdf.drawRightString(width - 20 * mm, height - 35 * mm, f"File: {confirmation.get('name', '-')}")
+    encoded = confirmation["dataUrl"].split(",", 1)[1]
+    image = ImageReader(BytesIO(base64.b64decode(encoded)))
+    image_width, image_height = image.getSize()
+    max_width, max_height = width - 40 * mm, height - 65 * mm
+    scale = min(max_width / image_width, max_height / image_height)
+    draw_width, draw_height = image_width * scale, image_height * scale
+    pdf.drawImage(image, (width - draw_width) / 2, 15 * mm, draw_width, draw_height, preserveAspectRatio=True)
 
 
 STATE = {
@@ -760,7 +812,7 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     pdf.drawCentredString(width / 2, y + 12, "Management Approval")
     management_approved = bool(doc.get("management", {}).get("approvedBy"))
     draw_label_value(pdf, "Approved By", management_name if management_approved else "Pending Management", 22 * mm, y - 4, 56 * mm)
-    draw_label_value(pdf, "Comments", doc.get("management", {}).get("remarks", "") if management_approved else "Approval optional", 85 * mm, y - 4, 103 * mm)
+    draw_label_value(pdf, "Comments", doc.get("management", {}).get("remarks", "") or "-", 85 * mm, y - 4, 103 * mm)
 
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
@@ -782,6 +834,7 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
 
     pdf.setFont("Helvetica-Oblique", 8)
     pdf.drawString(22 * mm, 22 * mm, "Internal All Employees")
+    draw_confirmation_page(pdf, doc)
     pdf.showPage()
     pdf.save()
     return buffer
@@ -832,23 +885,21 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf.drawString(22 * mm, y + 12, "Narration")
     pdf.rect(22 * mm, y - 20, 166 * mm, 30, stroke=1, fill=0)
     pdf.setFont("Helvetica", 10)
-    pdf.drawString(26 * mm, y - 4, doc.get("engineer", {}).get("notes") or f"Installation for {doc['clientName']}")
+    pdf.drawString(26 * mm, y - 4, doc.get("engineer", {}).get("notes") or "-")
 
     signature_rows = [
-        ("Requested by", engineer_name, "S.E"),
-        ("Approved by", accounts_name, "Accounts"),
-        ("Issued by", store_name, "Admin"),
-        ("Received by", engineer_name, "N/A"),
+        ("Requested by", engineer_name, doc.get("createdByRole", "Engineer"), doc.get("createdAt")),
+        ("Costed by", doc.get("sales", {}).get("submittedByName", "Not recorded"), doc.get("sales", {}).get("submittedByRole", "Sales"), doc.get("sales", {}).get("submittedAt")),
+        ("Billed by", accounts_name, doc.get("accounts", {}).get("processedByRole", "Accounts"), doc.get("accounts", {}).get("processedAt")),
+        ("Issued by", store_name, doc.get("store", {}).get("approvedByRole", "Store"), doc.get("store", {}).get("approvedAt")),
+        ("Approved by", doc.get("management", {}).get("approvedByName", "Not recorded"), doc.get("management", {}).get("approvedByRole", "Management"), doc.get("management", {}).get("approvedAt")),
     ]
     y -= 42 * mm
-    for label, name, position in signature_rows:
-        pdf.setFont("Helvetica-Bold", 9)
-        pdf.drawString(22 * mm, y, f"{label}:")
-        draw_label_value(pdf, "Name", name, 58 * mm, y - 1, 38 * mm)
-        draw_label_value(pdf, "Position", position, 103 * mm, y - 1, 38 * mm)
-        draw_label_value(pdf, "Signature", "", 147 * mm, y - 1, 22 * mm)
-        draw_label_value(pdf, "Date", datetime.now().strftime("%d/%m/%Y"), 173 * mm, y - 1, 20 * mm)
-        y -= 20 * mm
+    for label, name, position, acted_at in signature_rows:
+        acted_date = parse_iso(acted_at).strftime("%d/%m/%Y") if acted_at else "Not recorded"
+        pdf.setFont("Helvetica", 7.5)
+        pdf.drawString(22 * mm, y, f"{label}:   Name: {name}   |   Position: {position}   |   Date: {acted_date}")
+        y -= 10 * mm
 
     pdf.showPage()
     pdf.save()
@@ -1387,6 +1438,10 @@ def create_doc1():
         raise ValueError("Please select a valid onboarding type")
     client, location, contact, geo_location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Stock item")
+    owner = confirmation_owner(items, "TZS")
+    confirmation = require_confirmation_image(payload) if owner == "Engineer" else None
+    if confirmation:
+        confirmation.update({"uploadedBy": user["id"], "uploadedByName": user["name"], "uploadedAt": now_iso()})
     doc = {
         "id": str(uuid4()),
         "type": "doc1",
@@ -1403,14 +1458,18 @@ def create_doc1():
         "currentDepartment": "Sales",
         "createdBy": user["id"],
         "createdByName": user["name"],
+        "createdByRole": user["role"],
         "createdAt": now_iso(),
         "engineer": {"notes": optional_text(payload, "engineerNotes"), "submittedBy": user["id"], "submittedByName": user["name"]},
         "sales": {},
         "accounts": {},
         "store": {"confirmed": False, "amountMatches": None, "remarks": "", "items": items},
         "management": {},
+        "confirmationRequiredFrom": owner,
         "history": [history(user["id"], "Created Document 1", "Submitted to Sales.", user["name"])],
     }
+    if confirmation:
+        doc["clientConfirmation"] = confirmation
     STATE["documents"].insert(0, doc)
     notify("Sales", f"{doc['number']} is waiting for Sales amount.")
     return jsonify(doc), 201
@@ -1477,6 +1536,8 @@ def sales_submit(document_id: str):
         store_item["costCurrency"] = currency
         sales_item["costCurrency"] = currency
     package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
+    owner = doc.get("confirmationRequiredFrom") or confirmation_owner(doc.get("store", {}).get("items", []), "TZS")
+    confirmation = require_confirmation_image(payload) if owner == "Sales" else None
     labor_charge = require_number(payload, "amount", "Installation cost/labor charge", minimum=0, allow_zero=False)
     additional_nrr_field = "additionalNrr" if payload.get("additionalNrr") not in (None, "") else "additionalNpr"
     mrr_field = "mrr" if payload.get("mrr") not in (None, "") else "mbr"
@@ -1504,12 +1565,20 @@ def sales_submit(document_id: str):
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
         "submittedBy": user["id"],
         "submittedByName": user["name"],
+        "submittedByRole": user["role"],
+        "submittedAt": now_iso(),
         "requestedDate": submitted_at.date().isoformat(),
         "requestedTime": submitted_at.strftime("%I:%M %p"),
         "currency": currency,
         "equipment": deepcopy(equipment),
         "remarks": subscription,
     }
+    doc["confirmationRequiredFrom"] = owner
+    if confirmation:
+        confirmation.update({"uploadedBy": user["id"], "uploadedByName": user["name"], "uploadedAt": now_iso()})
+        doc["clientConfirmation"] = confirmation
+    elif not doc.get("clientConfirmation"):
+        raise ValueError("Engineer client email confirmation screenshot is missing")
     set_route(doc, "Pending Accounts", "Accounts")
     action = "Sales cost updated" if was_submitted else "Sales cost submitted"
     detail = "Labor charge and equipment cost were updated for Accounts." if was_submitted else "Labor charge and equipment cost were submitted to Accounts."
@@ -1542,6 +1611,7 @@ def accounts_submit(document_id: str):
             "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
             "processedBy": user["id"],
             "processedByName": user["name"],
+            "processedByRole": user["role"],
             "processedAt": now_iso(),
         }
         source_equipment = doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
@@ -1600,8 +1670,9 @@ def store_submit(document_id: str):
         "amountMatches": matches,
         "approvedBy": user["id"],
         "approvedByName": user["name"],
+        "approvedByRole": user["role"],
         "approvedAt": now_iso(),
-        "remarks": doc.get("store", {}).get("remarks", ""),
+        "remarks": optional_text(payload, "remarks"),
         "items": items,
     }
     if matches:
@@ -1627,7 +1698,7 @@ def management_submit(document_id: str):
         raise ValueError("Document 1 not found")
     require_status(doc, "Pending Management")
     payload = request.get_json(force=True)
-    doc["management"] = {"approvedBy": user["id"], "approvedByName": user["name"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
+    doc["management"] = {"approvedBy": user["id"], "approvedByName": user["name"], "approvedByRole": user["role"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
     set_route(doc, "Completed", "Engineer")
     doc["history"].append(history(user["id"], "Management approved", "Document completed and returned to Engineer.", user["name"]))
     notify("Engineer", f"{doc['number']} has been completed.")
@@ -1646,6 +1717,7 @@ def hod_submit(document_id: str):
     doc["hod"] = {
         "approvedBy": user["id"],
         "approvedByName": user["name"],
+        "approvedByRole": user["role"],
         "approvedAt": now_iso(),
         "remarks": optional_text(payload, "remarks"),
     }

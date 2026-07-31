@@ -244,6 +244,8 @@ function PasswordSetupCard({ onSubmit }) {
 
 function Doc1Form({ clients, onSubmit, onCancel }) {
   const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
+  const equipmentTotal = form.items.reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
+  const engineerMustConfirm = equipmentTotal < 1000000;
   return (
     <FormShell title="New Document 1" subtitle="Customer onboarding and stock requisition starts from Engineer." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Sales">
       <div className="form-grid">
@@ -266,6 +268,14 @@ function Doc1Form({ clients, onSubmit, onCancel }) {
         <label className="wide">Engineer Notes<textarea value={form.engineerNotes} onChange={(event) => setForm({ ...form, engineerNotes: event.target.value })} /></label>
       </div>
       <ItemEditor items={form.items} setItems={(items) => setForm({ ...form, items })} engineerRequest />
+      {engineerMustConfirm && (
+        <ConfirmationUpload
+          value={form.clientConfirmation}
+          onChange={(clientConfirmation) => setForm({ ...form, clientConfirmation })}
+          owner="Engineer"
+        />
+      )}
+      {!engineerMustConfirm && <p className="confirmation-routing-note">The equipment total has reached TZS 1,000,000 ($400 equivalent). Sales must upload the client email confirmation.</p>}
     </FormShell>
   );
 }
@@ -372,12 +382,14 @@ function SalesCostSummary({ doc }) {
 function ManagementReview({ user, doc, run }) {
   const pending = doc.status === "Pending Management";
   const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store Manager");
+  const [remarks, setRemarks] = useState(doc.management?.remarks || "");
   return (
-      <ActionPanel title="Store Manager Submission" enabled={pending} initiallyEditing={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, {}), "Document approved and completed.")}>
+      <ActionPanel title="Store Manager Submission" enabled={pending} initiallyEditing={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, { remarks }), "Document approved and completed.")}>
       <div className="form-grid">
         <p><strong>Submitted By</strong><br />{storeName}</p>
         <p><strong>Submitted At</strong><br />{doc.store?.approvedAt ? formatDate(doc.store.approvedAt) : "-"}</p>
         <p><strong>Status</strong><br /><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></p>
+        <label className="wide">Approval Comments<textarea disabled={!pending} value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
       </div>
       <ItemEditor items={doc.store?.items || []} setItems={() => {}} locked storeMode />
     </ActionPanel>
@@ -500,11 +512,18 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Prepared by" value={engineerName} /></div>
       <h3>Management Approval</h3>
-      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.approvedBy ? (doc.management?.remarks || "Approved") : "Approval optional"} /></div>
+      <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.remarks || "-"} /></div>
       <h3>Admin Stock Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value={storeName} /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
       <h3>Finance & Billing</h3>
       <div className="paper-fields two"><Field label="Billing Confirmation" value={isBilled ? "Billed" : "Not Billed"} /><Field label="User Created in System" value={isBilled ? "Yes" : "No"} /><Field label="Date" value={billingDate} /><Field label="Received by" value={engineerName} /></div>
+      {doc.clientConfirmation?.dataUrl && (
+        <section className="printed-confirmation">
+          <h3>Client Email Confirmation</h3>
+          <p>Uploaded by {doc.clientConfirmation.uploadedByName}</p>
+          <img src={doc.clientConfirmation.dataUrl} alt="Client email confirmation screenshot" />
+        </section>
+      )}
     </article>
   );
 }
@@ -514,9 +533,13 @@ function PaperCheck({ label, active = false }) {
 }
 
 function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
-  const engineerName = actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Engineer");
-  const accountsName = actorName(doc.accounts?.processedByName, doc.accounts?.processedBy, "Accounts");
-  const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store");
+  const people = [
+    ["Requested by", actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Not recorded"), doc.createdByRole || "Engineer", doc.createdAt],
+    ["Costed by", actorName(doc.sales?.submittedByName, doc.sales?.submittedBy, "Not recorded"), doc.sales?.submittedByRole || "Sales", doc.sales?.submittedAt],
+    ["Billed by", actorName(doc.accounts?.processedByName || doc.accounts?.submittedByName, doc.accounts?.processedBy || doc.accounts?.submittedBy, "Not recorded"), doc.accounts?.processedByRole || doc.accounts?.submittedByRole || "Accounts", doc.accounts?.processedAt || doc.accounts?.submittedAt],
+    ["Issued by", actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Not recorded"), doc.store?.approvedByRole || "Store", doc.store?.approvedAt],
+    ["Approved by", actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Not recorded"), doc.management?.approvedByRole || "Management", doc.management?.approvedAt],
+  ];
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
       <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>Install Requisition No. {doc.number}</p></div></header>
@@ -528,19 +551,16 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
           ))}
         </tbody>
       </table>
-      <div className="narration"><strong>Narration</strong><p>{doc.engineer?.notes || `Installation for ${doc.clientName}`}</p></div>
+      <div className="narration"><strong>Narration</strong><p>{doc.engineer?.notes || "-"}</p></div>
       <div className="signature-grid">
-        <Signature label="Requested by" name={engineerName} position="S.E" />
-        <Signature label="Approved by" name={accountsName} position="Accounts" />
-        <Signature label="Issued by" name={storeName} position="Admin" />
-        <Signature label="Received by" name={engineerName} position="N/A" />
+        {people.map(([label, name, position, at]) => <Signature key={label} label={label} name={name} position={position} at={at} />)}
       </div>
     </article>
   );
 }
 
-function Signature({ label, name, position }) {
-  return <div className="signature-row"><strong>{label}</strong><Field label="Name" value={name} /><Field label="Position" value={position} /><Field label="Signature" value="" /><Field label="Date" value={formatDate(new Date())} /></div>;
+function Signature({ label, name, position, at }) {
+  return <div className="signature-row"><strong>{label}:</strong><span><b>Name:</b> {name}</span><span><b>Position:</b> {position}</span><span><b>Date:</b> {at ? formatDate(at) : "Not recorded"}</span></div>;
 }
 
 function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate = false }) {
@@ -608,6 +628,8 @@ function Doc1Actions({ user, doc, run }) {
   const engineerEquipment = doc.store?.items || [];
   const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
+  const originalEngineerTotal = (doc.store?.items || []).reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
+  const salesMustConfirm = doc.confirmationRequiredFrom === "Sales" || (!doc.confirmationRequiredFrom && originalEngineerTotal >= 1000000);
   const laborCharge = Number(sales.amount || 0);
   const salesTotal = laborCharge + equipmentTotal;
   const oneTimeTotal = salesTotal;
@@ -618,12 +640,13 @@ function Doc1Actions({ user, doc, run }) {
   })));
   const [storeRemarks, setStoreRemarks] = useState(doc.store?.remarks || "");
   const [managementRemarks, setManagementRemarks] = useState(doc.management?.remarks || "");
+  const [clientConfirmation, setClientConfirmation] = useState(null);
   const storeOnboardingPrintId = `store-onboarding-print-${doc.id}`;
   const storeStockPrintId = `store-stock-print-${doc.id}`;
 
   return (
     <>
-      <ActionPanel enabled={salesOpen} initiallyEditing={doc.status === "Pending Sales"} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
+      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={doc.status === "Pending Sales"} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -643,7 +666,14 @@ function Doc1Actions({ user, doc, run }) {
           <label>Time<input readOnly value={formatTime(sales.requestedTime)} /></label>
         </div>
         <EquipmentCostEditor items={salesEquipment} setItems={setSalesEquipment} locked={!salesOpen} currency={sales.currency || "TZS"} />
-      </ActionPanel>
+        {salesOpen && salesMustConfirm && (
+          <ConfirmationUpload
+            value={clientConfirmation}
+            onChange={setClientConfirmation}
+            owner="Sales"
+          />
+        )}
+      </ActionPanel>}
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
@@ -725,6 +755,23 @@ function ActionPanel({ title, enabled, initiallyEditing = false, actionLabel, on
       </div>}
     </form>
   );
+}
+
+function ConfirmationUpload({ value, onChange, owner }) {
+  function selectFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return onChange(null);
+    if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      event.target.setCustomValidity("Select a PNG or JPEG screenshot no larger than 5 MB.");
+      event.target.reportValidity();
+      return onChange(null);
+    }
+    event.target.setCustomValidity("");
+    const reader = new FileReader();
+    reader.onload = () => onChange({ name: file.name, dataUrl: reader.result });
+    reader.readAsDataURL(file);
+  }
+  return <div className="confirmation-upload"><label>Client email confirmation screenshot ({owner})<input required accept="image/png,image/jpeg" type="file" onChange={selectFile} /></label>{value?.dataUrl && <img src={value.dataUrl} alt="Client email confirmation preview" />}<small>Required before submission. PNG or JPEG, maximum 5 MB.</small></div>;
 }
 
 function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS" }) {
