@@ -656,10 +656,10 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     one_time_total = float(doc.get("sales", {}).get("oneTimeTotal") or 0) or (
         float(doc.get("sales", {}).get("amount") or 0)
         + equipment_cost
-        + float(doc.get("sales", {}).get("additionalNpr") or 0)
+        + float(doc.get("sales", {}).get("additionalNrr", doc.get("sales", {}).get("additionalNpr")) or 0)
     )
     grand_total = float(doc.get("sales", {}).get("grandTotal") or 0) or (
-        one_time_total + float(doc.get("sales", {}).get("mbr") or 0)
+        one_time_total + float(doc.get("sales", {}).get("mrr", doc.get("sales", {}).get("mbr")) or 0)
     )
     draw_label_value(
         pdf,
@@ -669,7 +669,7 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
         y - 18 * mm,
         52 * mm,
     )
-    draw_label_value(pdf, "MBR", money_text(doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount")), currency), 143 * mm, y - 18 * mm, 45 * mm)
+    draw_label_value(pdf, "MRR", money_text(doc.get("sales", {}).get("mrr", doc.get("sales", {}).get("mbr", doc.get("accounts", {}).get("billingAmount"))), currency), 143 * mm, y - 18 * mm, 45 * mm)
     draw_label_value(pdf, "Subscription Package", doc.get("sales", {}).get("subscription", doc.get("sales", {}).get("remarks", "")), 22 * mm, y - 36 * mm, 115 * mm)
     draw_label_value(pdf, "Requested By", doc.get("sales", {}).get("requestedBy", "Engineer"), 143 * mm, y - 36 * mm, 45 * mm)
     draw_label_value(pdf, "Equipment Cost", money_text(equipment_cost, currency), 22 * mm, y - 54 * mm, 56 * mm)
@@ -1352,8 +1352,10 @@ def sales_submit(document_id: str):
         sales_item["costCurrency"] = currency
     package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
     labor_charge = require_number(payload, "amount", "Installation cost/labor charge", minimum=0, allow_zero=False)
-    additional_npr = require_number(payload, "additionalNpr", "Additional NPR", minimum=0)
-    mbr = require_number(payload, "mbr", "MBR", minimum=0)
+    additional_nrr_field = "additionalNrr" if payload.get("additionalNrr") not in (None, "") else "additionalNpr"
+    mrr_field = "mrr" if payload.get("mrr") not in (None, "") else "mbr"
+    additional_nrr = require_number(payload, additional_nrr_field, "Additional NRR", minimum=0)
+    mrr = require_number(payload, mrr_field, "MRR", minimum=0)
     total_sales_cost = labor_charge + package_cost
     one_time_total = total_sales_cost
     grand_total = total_sales_cost
@@ -1368,11 +1370,11 @@ def sales_submit(document_id: str):
         "amount": total_sales_cost,
         "laborCharge": labor_charge,
         "packageCost": package_cost,
-        "additionalNpr": additional_npr,
+        "additionalNrr": additional_nrr,
         "oneTimeTotal": one_time_total,
         "grandTotal": grand_total,
         "subscription": subscription,
-        "mbr": mbr,
+        "mrr": mrr,
         "requestedBy": require_text(payload, "requestedBy", "Requested by"),
         "requestedDate": submitted_at.date().isoformat(),
         "requestedTime": submitted_at.strftime("%I:%M %p"),

@@ -456,9 +456,9 @@ function CompletedEngineerDocuments({ user, doc }) {
 function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const equipmentCost = Number(doc.sales?.packageCost || 0);
   const oneTimeTotal = doc.sales?.oneTimeTotal ?? (
-    Number(doc.sales?.amount || 0) + equipmentCost + Number(doc.sales?.additionalNpr || 0)
+    Number(doc.sales?.amount || 0) + equipmentCost + Number(doc.sales?.additionalNrr ?? doc.sales?.additionalNpr ?? 0)
   );
-  const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mbr || 0));
+  const firstInvoiceTotal = doc.sales?.grandTotal ?? (oneTimeTotal + Number(doc.sales?.mrr ?? doc.sales?.mbr ?? 0));
   const laborCharge = Number(doc.sales?.laborCharge ?? doc.sales?.amount ?? 0);
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
@@ -475,10 +475,10 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
         <Field label="Location" value={doc.location} />
         <Field label="Installation Cost/Labor Charge" value={money(laborCharge, doc.sales?.currency)} />
         <Field label="Equipment Cost" value={money(equipmentCost, doc.accounts?.currency || doc.sales?.currency)} />
-        <Field label="Additional NPR" value={money(doc.sales?.additionalNpr, doc.sales?.currency)} />
+        <Field label="Additional NRR" value={money(doc.sales?.additionalNrr ?? doc.sales?.additionalNpr, doc.sales?.currency)} />
         <Field label="Total One-time Cost" value={money(oneTimeTotal, doc.sales?.currency)} />
         <Field label="Subscription package" value={doc.sales?.subscription || doc.sales?.remarks || doc.service} />
-        <Field label="MBR" value={money(doc.sales?.mbr ?? 0, doc.accounts?.currency || doc.sales?.currency)} />
+        <Field label="MRR" value={money(doc.sales?.mrr ?? doc.sales?.mbr ?? 0, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="First Invoice Total" value={money(firstInvoiceTotal, doc.accounts?.currency || doc.sales?.currency)} />
         <Field label="Requested By" value={doc.sales?.requestedBy || "Engineer"} />
         <Field label="Date" value={doc.sales?.requestedDate || formatDate(doc.createdAt)} />
@@ -577,9 +577,9 @@ function Doc1Actions({ user, doc, run }) {
     surveyFormNo: doc.sales?.surveyFormNo || doc.number || "",
     amount: doc.sales?.laborCharge ?? doc.sales?.amount ?? "",
     packageCost: doc.sales?.packageCost || "",
-    additionalNpr: doc.sales?.additionalNpr || "",
+    additionalNrr: doc.sales?.additionalNrr ?? doc.sales?.additionalNpr ?? "",
     subscription: doc.sales?.subscription || doc.sales?.remarks || doc.service || "",
-    mbr: doc.sales?.mbr || "",
+    mrr: doc.sales?.mrr ?? doc.sales?.mbr ?? "",
     requestedBy: doc.sales?.requestedBy || user.name || "",
     requestedDate: doc.sales?.requestedDate || new Date().toISOString().slice(0, 10),
     requestedTime: doc.sales?.requestedTime || new Date().toTimeString().slice(0, 5),
@@ -614,10 +614,10 @@ function Doc1Actions({ user, doc, run }) {
           {numberInput("Installation Cost/Labor Charge", "amount", sales, setSales, !salesOpen)}
           <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
           <p><strong>Total Cost from Sales</strong><br />{money(salesTotal, sales.currency)}</p>
-          {numberInput("Additional NPR", "additionalNpr", sales, setSales, !salesOpen)}
+          {numberInput("Additional NRR", "additionalNrr", sales, setSales, !salesOpen)}
           <AutoTotal label="Total Sales Cost (Labor + Equipment)" value={salesTotal} currency={sales.currency} />
           {subscriptionInput(sales, setSales, !salesOpen)}
-          {numberInput("MBR", "mbr", sales, setSales, !salesOpen)}
+          {numberInput("MRR", "mrr", sales, setSales, !salesOpen)}
           <AutoTotal label="Total Sales Cost" value={grandTotal} currency={sales.currency} />
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
