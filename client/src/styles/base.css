@@ -133,24 +133,49 @@ button {
   background: var(--line);
 }
 
-.google-button,
-.google-disabled {
+.microsoft-sign-in {
   width: 100%;
-  min-height: 44px;
-}
-
-.google-button > div {
-  margin: 0 auto;
-}
-
-.google-disabled {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #f8fafc;
-  color: var(--muted);
-  cursor: not-allowed;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid #8a8886;
+  border-radius: 3px;
+  background: #fff;
+  color: #1b1b1b;
+  cursor: pointer;
   font-weight: 700;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
+
+.microsoft-sign-in:hover {
+  background: #f3f2f1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.microsoft-sign-in:active {
+  background: #e1dfdd;
+  transform: translateY(1px);
+}
+
+.microsoft-sign-in:focus-visible {
+  outline: 3px solid rgba(0, 120, 212, 0.35);
+  outline-offset: 2px;
+}
+
+.microsoft-mark {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+}
+
+.microsoft-mark i:nth-child(1) { background: #f25022; }
+.microsoft-mark i:nth-child(2) { background: #7fba00; }
+.microsoft-mark i:nth-child(3) { background: #00a4ef; }
+.microsoft-mark i:nth-child(4) { background: #ffb900; }
 
 .auth-bottom-links button,
 .auth-back-link {
@@ -336,8 +361,7 @@ textarea {
   }
 
   .btn,
-  .google-button,
-  .google-disabled {
+  .microsoft-sign-in {
     min-height: 40px;
   }
 }

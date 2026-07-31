@@ -1,73 +1,16 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import zanlinkLogo from "../assets/zanlink-logo.png";
 import { api } from "../services/api";
 
-const defaultGoogleClientId = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com";
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || defaultGoogleClientId;
+const apiUrl = import.meta.env.VITE_API_URL || "";
 
-function loadGoogleIdentity() {
-  if (window.google?.accounts?.id) return Promise.resolve(window.google);
-
-  return new Promise((resolve, reject) => {
-    const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client?hl=en"]');
-    const script = existingScript || document.createElement("script");
-    const handleLoad = () => resolve(window.google);
-    const handleError = () => reject(new Error("Google sign-in could not be loaded"));
-
-    script.addEventListener("load", handleLoad, { once: true });
-    script.addEventListener("error", handleError, { once: true });
-    if (!existingScript) {
-      script.src = "https://accounts.google.com/gsi/client?hl=en";
-      script.async = true;
-      document.head.appendChild(script);
-    }
-  });
-}
-
-function GoogleSignIn({ onLogin, showError }) {
-  const buttonRef = useRef(null);
-  const onLoginRef = useRef(onLogin);
-  const showErrorRef = useRef(showError);
-  onLoginRef.current = onLogin;
-  showErrorRef.current = showError;
-
-  useEffect(() => {
-    if (!googleClientId) return undefined;
-    let active = true;
-
-    loadGoogleIdentity()
-      .then((google) => {
-        if (!active || !buttonRef.current) return;
-        google.accounts.id.initialize({
-          client_id: googleClientId,
-          callback: async (response) => {
-            try {
-              onLoginRef.current(await api.googleLogin(response.credential));
-            } catch (error) {
-              showErrorRef.current(error);
-            }
-          },
-        });
-        google.accounts.id.renderButton(buttonRef.current, {
-          theme: "outline",
-          size: "large",
-          shape: "rectangular",
-          text: "signin_with",
-          width: Math.min(buttonRef.current.offsetWidth || 320, 400),
-        });
-      })
-      .catch((error) => showErrorRef.current(error));
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (!googleClientId) {
-    return <button className="google-disabled" type="button" disabled title="Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in">Sign in with Google</button>;
-  }
-
-  return <div className="google-button" ref={buttonRef} />;
+function MicrosoftSignIn() {
+  return (
+    <button className="microsoft-sign-in" type="button" onClick={() => window.location.assign(`${apiUrl}/api/auth/microsoft/login`)}>
+      <span aria-hidden="true" className="microsoft-mark"><i /><i /><i /><i /></span>
+      <span>Sign in with Microsoft</span>
+    </button>
+  );
 }
 
 function EyeIcon({ hidden }) {
@@ -120,6 +63,8 @@ const demoUsers = [
 
 export default function LoginPage({ onLogin, showError }) {
   const resetToken = new URLSearchParams(window.location.search).get("reset_token") || "";
+  const microsoftAuthCode = new URLSearchParams(window.location.search).get("microsoft_auth_code") || "";
+  const microsoftError = new URLSearchParams(window.location.search).get("microsoft_error") || "";
   const [mode, setMode] = useState(resetToken ? "reset-password" : "login");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
   const [forgotEmail, setForgotEmail] = useState("");
@@ -138,6 +83,19 @@ export default function LoginPage({ onLogin, showError }) {
     setNotice("");
     setAuthError(message);
   }
+
+  useEffect(() => {
+    if (microsoftError) {
+      setAuthError(microsoftError);
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
+    if (!microsoftAuthCode) return;
+    api.microsoftComplete(microsoftAuthCode)
+      .then(onLogin)
+      .catch(reportAuthError)
+      .finally(() => window.history.replaceState({}, "", window.location.pathname));
+  }, []);
 
   function switchMode(nextMode) {
     setMode(nextMode);
@@ -203,7 +161,7 @@ export default function LoginPage({ onLogin, showError }) {
               <button className="btn">Sign in</button>
             </form>
             <div className="auth-divider"><span>or</span></div>
-            <GoogleSignIn onLogin={onLogin} showError={reportAuthError} />
+            <MicrosoftSignIn />
             <div className="auth-bottom-links">
               <button type="button" onClick={() => switchMode("forgot")}>Forgot password?</button>
             </div>

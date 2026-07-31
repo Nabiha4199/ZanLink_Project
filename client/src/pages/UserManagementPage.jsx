@@ -40,7 +40,7 @@ export default function UserManagementPage({ currentUser, users, onCreateUser, o
   return (
     <>
       <div className="topbar">
-        <div className="page-title"><h1>User Management</h1><p>Google registrations wait here for a System Admin to assign a role and approve access. System Admins can also revoke or permanently delete accounts.</p></div>
+        <div className="page-title"><h1>User Management</h1><p>Microsoft registrations wait here for a System Admin to assign a role and approve access. System Admins can also revoke or permanently delete accounts.</p></div>
       </div>
       <form className="panel" onSubmit={createUser}>
         <div className="section-title"><h2>Add User</h2><span>The current admin stays signed in.</span></div>
@@ -48,7 +48,7 @@ export default function UserManagementPage({ currentUser, users, onCreateUser, o
           <label>Full Name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>Email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
           <label>Role<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>{roles.map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
-          <label>Password (optional)<input minLength="8" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><small>Leave empty for Google-only sign-in.</small></label>
+          <label>Password (optional)<input minLength="8" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><small>Leave empty for Microsoft-only sign-in.</small></label>
         </div>
         <div className="button-row"><button className="btn" disabled={pending === "create"}>Create user</button></div>
       </form>
@@ -76,7 +76,7 @@ export default function UserManagementPage({ currentUser, users, onCreateUser, o
                         {roles.map((role) => <option key={role} value={role}>{role}</option>)}
                       </select>
                     </td>
-                    <td>{account.pendingApproval ? "Awaiting approval" : account.googleLinked ? "Google" : account.hasPassword ? "Password" : "Google required"}</td>
+                    <td>{account.pendingApproval ? "Awaiting approval" : account.microsoftLinked ? "Microsoft" : account.hasPassword ? "Password" : "Microsoft required"}</td>
                     <td>
                       <button
                         className={account.active ? "btn danger" : "btn secondary"}

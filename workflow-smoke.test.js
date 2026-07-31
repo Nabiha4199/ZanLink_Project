@@ -84,9 +84,9 @@ salesSubmit(fakeForm(doc.id, {
   surveyFormNo: "REQ-TEST",
   amount: 1000,
   packageCost: 900,
-  additionalNpr: 0,
+  additionalNrr: 0,
   subscription: "Business package",
-  mbr: 1000,
+  mrr: 1000,
   requestedBy: "Sales Team",
   requestedDate: "2026-07-14"
 }));
@@ -109,9 +109,9 @@ salesSubmit(fakeForm(doc.id, {
   surveyFormNo: "REQ-TEST",
   amount: 1000,
   packageCost: 900,
-  additionalNpr: 0,
+  additionalNrr: 0,
   subscription: "Business package",
-  mbr: 1000,
+  mrr: 1000,
   requestedBy: "Sales Team",
   requestedDate: "2026-07-14"
 }));

@@ -15,7 +15,7 @@ async function request(path, options = {}, user) {
 
 export const api = {
   login: (payload) => request("/api/login", { method: "POST", body: JSON.stringify(payload) }),
-  googleLogin: (credential) => request("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
+  microsoftComplete: (code) => request("/api/auth/microsoft/complete", { method: "POST", body: JSON.stringify({ code }) }),
   setPassword: (user, payload) => request("/api/account/password", { method: "POST", body: JSON.stringify(payload) }, user),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
   resetPassword: (payload) => request("/api/reset-password", { method: "POST", body: JSON.stringify(payload) }),

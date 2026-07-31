@@ -54,16 +54,21 @@ The development server includes seeded accounts for local workflow testing. Do n
 
 Configure the server's SMTP settings and `SUPPORT_EMAIL` as described in `server/.env.example`. Then restart the server, use **Forgot password**, and sign in with the new password after following the emailed reset link.
 
-## Google sign-in
+## Microsoft Entra ID sign-in
 
-Create a Google OAuth 2.0 Web application client, add the client URL (for example `http://localhost:5173`) as an authorized JavaScript origin, and set the same client ID in both environments:
+Register a **Web** application in Microsoft Entra ID and add the backend callback as its Redirect URI. For local development, use `http://localhost:5000/api/auth/microsoft/callback`; the configured value must exactly match `MICROSOFT_REDIRECT_URI`.
+
+Set the following values in `server/.env` (never put the client secret in the client environment):
 
 ```text
-client/.env: VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-server environment: GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+FLASK_SECRET_KEY=replace-with-a-long-random-value
+MICROSOFT_CLIENT_ID=your-application-client-id
+MICROSOFT_TENANT_ID=your-directory-tenant-id
+MICROSOFT_CLIENT_SECRET=your-client-secret-value
+MICROSOFT_REDIRECT_URI=http://localhost:5000/api/auth/microsoft/callback
 ```
 
-New Google users are created with the least-privileged `Engineer` role. Restart both applications after changing environment values.
+Only accounts already created by a System Admin can sign in through Microsoft Entra ID. Restart the server after changing environment values.
 
 ## Validation
 

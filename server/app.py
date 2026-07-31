@@ -9,18 +9,17 @@ from io import BytesIO
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from urllib.parse import urlencode
 from uuid import uuid4
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, redirect, request, session
 from flask import send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 try:
-    from google.auth.transport import requests as google_requests
-    from google.oauth2 import id_token
+    import msal
 except ModuleNotFoundError:
-    google_requests = None
-    id_token = None
+    msal = None
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -33,11 +32,13 @@ SERVER_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(SERVER_DIRECTORY, ".env"))
 load_dotenv(os.path.join(SERVER_DIRECTORY, ".env.local"))
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_urlsafe(32)
 CORS(app, origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")])
-DEFAULT_GOOGLE_CLIENT_ID = "72716325306-vco86obca8h85qeoadsc9gbntqimu85u.apps.googleusercontent.com"
-configured_google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-GOOGLE_CLIENT_ID = configured_google_client_id or DEFAULT_GOOGLE_CLIENT_ID
 APP_URL = os.getenv("APP_URL", "http://localhost:5173").rstrip("/")
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "").strip()
+MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID", "").strip()
+MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+MICROSOFT_REDIRECT_URI = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:5000/api/auth/microsoft/callback").strip()
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
@@ -47,6 +48,7 @@ SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
 PASSWORD_RESET_TOKENS = {}
+MICROSOFT_LOGIN_CODES = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
 USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
@@ -59,6 +61,7 @@ USERS = [
     {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
     {"id": "u4", "name": "System Admin", "username": "admin", "email": "admin@iitmz.ac.in", "password": "demo1234", "role": "System Admin", "department": "Management"},
     {"id": "u8", "name": "Abdallah", "username": "abdallah", "email": "zda23b014@iitmz.ac.in", "role": "System Admin", "department": "Management"},
+    {"id": "u9", "name": "Incredible Dula", "username": "incredibledula90", "email": "incredibledula90@gmail.com", "role": "System Admin", "department": "Management"},
 
 ]
 
@@ -186,10 +189,30 @@ def public_user(user: dict) -> dict:
     safe["active"] = user.get("active", True)
     safe["pendingApproval"] = user.get("pendingApproval", False)
     safe["hasPassword"] = bool(user.get("password"))
-    safe["googleLinked"] = bool(user.get("googleSub"))
+    safe["microsoftLinked"] = bool(user.get("entraOid"))
     safe.pop("password", None)
-    safe.pop("googleSub", None)
+    safe.pop("entraOid", None)
     return safe
+
+
+def microsoft_client():
+    if not msal or not MICROSOFT_CLIENT_ID or not MICROSOFT_TENANT_ID or not MICROSOFT_CLIENT_SECRET:
+        return None
+    return msal.ConfidentialClientApplication(
+        MICROSOFT_CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}",
+        client_credential=MICROSOFT_CLIENT_SECRET,
+    )
+
+
+def create_microsoft_login_code(user: dict) -> str:
+    now = datetime.now(timezone.utc)
+    for code, entry in list(MICROSOFT_LOGIN_CODES.items()):
+        if entry["expiresAt"] <= now:
+            MICROSOFT_LOGIN_CODES.pop(code, None)
+    code = secrets.token_urlsafe(32)
+    MICROSOFT_LOGIN_CODES[code] = {"user": public_user(user), "expiresAt": now + timedelta(minutes=2)}
+    return code
 
 
 def normalize_username(value: str | None) -> str:
@@ -1017,8 +1040,8 @@ def health():
     return jsonify({
         "ok": True,
         "service": "zanlink-backend",
-        "googleSignInConfigured": bool(GOOGLE_CLIENT_ID),
-        "googleAuthInstalled": bool(google_requests and id_token),
+        "microsoftSignInConfigured": bool(microsoft_client()),
+        "microsoftAuthInstalled": bool(msal),
         "allowedEmailDomain": ALLOWED_EMAIL_DOMAIN,
     })
 
@@ -1084,7 +1107,7 @@ def update_user_role(user_id: str):
         active = payload["active"]
 
     if active and user.get("pendingApproval", False) and role_info["role"] == "Pending Approval":
-        raise ValueError("Select a role before approving this Google account")
+        raise ValueError("Select a role before approving this Microsoft account")
 
     active_admin_count = sum(
         (item["id"] != user["id"] and item["role"] == "System Admin" and item.get("active", True))
@@ -1192,60 +1215,80 @@ def login():
     if existing_user and not existing_user.get("active", True):
         return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if existing_user and not existing_user.get("password"):
-        return jsonify({"error": "This account uses Google sign-in. Use Sign in with Google or reset your password first."}), 401
+        return jsonify({"error": "This account uses Microsoft sign-in. Use Sign in with Microsoft or reset your password first."}), 401
     user = next((item for item in USERS if (item.get("email") == identifier or item.get("username") == identifier) and item.get("password") == payload.get("password")), None)
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
     return jsonify(public_user(user))
 
 
-@app.post("/api/auth/google")
-def google_login():
-    if not google_requests or not id_token:
-        return jsonify({"error": "Google sign-in dependency is missing on the server. Run: python -m pip install -r requirements.txt"}), 503
-    if not GOOGLE_CLIENT_ID:
-        return jsonify({"error": "Google sign-in is not configured on the server"}), 503
+@app.get("/api/auth/microsoft/login")
+def microsoft_login():
+    if not msal:
+        return jsonify({"error": "Microsoft Entra sign-in dependency is missing. Start the server with server/.venv/bin/python after installing server requirements."}), 503
+    missing = [name for name, value in {
+        "MICROSOFT_CLIENT_ID": MICROSOFT_CLIENT_ID,
+        "MICROSOFT_TENANT_ID": MICROSOFT_TENANT_ID,
+        "MICROSOFT_CLIENT_SECRET": MICROSOFT_CLIENT_SECRET,
+    }.items() if not value]
+    if missing:
+        return jsonify({"error": f"Microsoft Entra sign-in is missing: {', '.join(missing)}."}), 503
+    client = microsoft_client()
+    flow = client.initiate_auth_code_flow(
+        scopes=["email"],
+        redirect_uri=MICROSOFT_REDIRECT_URI,
+    )
+    if "auth_uri" not in flow:
+        app.logger.error("Could not start Microsoft Entra sign-in: %s", flow)
+        return jsonify({"error": "Microsoft Entra sign-in could not be started."}), 503
+    session["microsoft_auth_flow"] = flow
+    return redirect(flow["auth_uri"])
 
-    credential = str((request.get_json(force=True) or {}).get("credential") or "")
-    if not credential:
-        raise ValueError("Google credential is required")
 
+@app.get("/api/auth/microsoft/callback")
+def microsoft_callback():
+    client = microsoft_client()
+    flow = session.pop("microsoft_auth_flow", None)
+    if not client or not flow:
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'Microsoft sign-in session expired. Please try again.'})}")
+    result = client.acquire_token_by_auth_code_flow(flow, request.args.to_dict(flat=True))
+    if "error" in result:
+        message = str(result.get("error_description") or result.get("error") or "Microsoft sign-in failed")
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': message})}")
+
+    identity = result.get("id_token_claims") or {}
+    email_value = identity.get("preferred_username") or identity.get("email")
     try:
-        identity = id_token.verify_oauth2_token(
-            credential,
-            google_requests.Request(),
-            GOOGLE_CLIENT_ID,
-            clock_skew_in_seconds=10,
-        )
+        email = require_allowed_email(email_value, "sign in")
     except ValueError as error:
-        app.logger.warning("Google credential verification failed: %s", error)
-        return jsonify({"error": f"Google sign-in could not be verified: {error}"}), 401
-    except Exception as error:
-        app.logger.exception("Google verification service failed")
-        return jsonify({"error": f"Google verification service failed: {error}"}), 503
-
-    try:
-        email = require_allowed_email(identity.get("email"), "sign in")
-    except ValueError as error:
-        return jsonify({"error": str(error)}), 403
-    google_sub = str(identity.get("sub") or "")
-    if not google_sub or not email or identity.get("email_verified") not in (True, "true"):
-        return jsonify({"error": "A verified Google account is required"}), 401
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': str(error)})}")
+    object_id = str(identity.get("oid") or "")
+    if not object_id:
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'Microsoft Entra did not return a user ID.'})}")
 
     user = next((item for item in USERS if item.get("email") == email), None)
-    if user and user.get("googleSub") and user["googleSub"] != google_sub:
-        return jsonify({"error": "This account is already linked to a different Google identity. Contact support."}), 403
-    if user and user.get("pendingApproval", False):
-        return jsonify({"error": "Your Google account is waiting for System Admin approval. You will be able to continue with Google sign-in once it is approved."}), 403
-    if user and not user.get("active", True):
-        return jsonify({"error": "This account has been disabled. Contact a System Admin."}), 403
     if not user:
-        return jsonify({"error": "No account exists for this email address. Contact a System Admin to create one."}), 403
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'No account exists for this email address. Contact a System Admin to create one.'})}")
+    if user.get("entraOid") and user["entraOid"] != object_id:
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'This account is already linked to a different Microsoft identity. Contact support.'})}")
+    if user.get("pendingApproval", False):
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'Your Microsoft account is waiting for System Admin approval.'})}")
+    if not user.get("active", True):
+        return redirect(f"{APP_URL}/?{urlencode({'microsoft_error': 'This account has been disabled. Contact a System Admin.'})}")
 
-    user["googleSub"] = google_sub
+    user["entraOid"] = object_id
     user["picture"] = str(identity.get("picture") or user.get("picture") or "")
+    login_code = create_microsoft_login_code(user)
+    return redirect(f"{APP_URL}/?{urlencode({'microsoft_auth_code': login_code})}")
 
-    return jsonify(public_user(user))
+
+@app.post("/api/auth/microsoft/complete")
+def microsoft_complete_login():
+    code = str((request.get_json(force=True) or {}).get("code") or "")
+    entry = MICROSOFT_LOGIN_CODES.pop(code, None)
+    if not entry or entry["expiresAt"] <= datetime.now(timezone.utc):
+        raise ValueError("Microsoft sign-in session expired. Please try again.")
+    return jsonify(entry["user"])
 
 
 @app.post("/api/register")
@@ -1482,27 +1525,25 @@ def accounts_submit(document_id: str):
     doc = find_document(document_id)
     if not doc:
         raise ValueError("Document not found")
-    if doc["type"] == "maintenance":
-        require_status(doc, "Pending Accounts")
-    else:
-        require_status(doc, "Pending Accounts")
+    require_status(doc, "Pending Accounts")
     payload = request.get_json(force=True)
-    billing_amount = require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=doc["type"] == "maintenance")
-    doc["accounts"] = {
-        "billingAmount": billing_amount,
-        "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
-        "remarks": require_text(payload, "remarks", "Remarks", max_length=500),
-        "billInUsd": bool(payload.get("billInUsd")),
-        "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
-        "processedBy": user["id"],
-        "processedByName": user["name"],
-        "processedAt": now_iso(),
-    }
     if doc["type"] == "maintenance":
+        doc["accounts"] = {}
         set_route(doc, "Completed", "Engineer")
-        doc["history"].append(history(user["id"], "General Maintenance billing added", "General Maintenance completed and returned to Engineer.", user["name"]))
-        notify("Engineer", f"{doc['number']} General Maintenance has been completed.")
+        doc["history"].append(history(user["id"], "General Maintenance equipment reviewed", "Equipment used was submitted and the document returned to Engineer.", user["name"]))
+        notify("Engineer", f"{doc['number']} General Maintenance equipment has been reviewed and the request is complete.")
     else:
+        billing_amount = require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=False)
+        doc["accounts"] = {
+            "billingAmount": billing_amount,
+            "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
+            "remarks": require_text(payload, "remarks", "Remarks", max_length=500),
+            "billInUsd": bool(payload.get("billInUsd")),
+            "currency": "USD" if payload.get("billInUsd") else str(doc.get("sales", {}).get("currency") or "TZS"),
+            "processedBy": user["id"],
+            "processedByName": user["name"],
+            "processedAt": now_iso(),
+        }
         source_equipment = doc.get("sales", {}).get("equipment") or doc.get("store", {}).get("items", [])
         equipment = validate_items(source_equipment, require_cost=True, context="Sales equipment")
         store_items = deepcopy(doc.get("store", {}).get("items", []))

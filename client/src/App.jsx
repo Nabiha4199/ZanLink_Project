@@ -104,7 +104,7 @@ function App() {
     try {
       const updatedUser = await api.setPassword(user, payload);
       setUser(updatedUser);
-      setMessage("Password added. You can now sign in with Google or email and password.");
+      setMessage("Password added. You can now sign in with Microsoft or email and password.");
       setTimeout(() => setMessage(""), 3200);
     } catch (error) {
       showError(error);
@@ -127,7 +127,7 @@ function App() {
     try {
       await api.updateUser(user, userId, changes);
       await refresh();
-      setMessage(changes.approve ? "Google account approved. The user can now continue with Google sign-in." : changes.active === false ? "User access revoked." : changes.active === true ? "User access restored." : "User role updated.");
+      setMessage(changes.approve ? "Microsoft account approved. The user can now continue with Microsoft sign-in." : changes.active === false ? "User access revoked." : changes.active === true ? "User access restored." : "User role updated.");
       setTimeout(() => setMessage(""), 2600);
     } catch (error) {
       showError(error);
@@ -167,7 +167,7 @@ function App() {
     <div className="app-shell">
       <Sidebar user={user} view={view} onNavigate={navigate} onStartTour={startTour} onLogout={() => { localStorage.removeItem("zanlink-user"); setUser(null); }} />
       <main className="main">
-        {user.googleLinked && !user.hasPassword && <PasswordSetupCard onSubmit={setAccountPassword} />}
+        {user.microsoftLinked && !user.hasPassword && <PasswordSetupCard onSubmit={setAccountPassword} />}
         {selected ? (
           <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
         ) : view === "doc1" ? (
@@ -215,7 +215,7 @@ function PasswordSetupCard({ onSubmit }) {
     <form className="account-password-card" onSubmit={submit}>
       <div>
         <strong>Add password sign-in</strong>
-        <span>This Google account can also use email and password after you create an app password.</span>
+        <span>This Microsoft account can also use email and password after you create an app password.</span>
       </div>
       <label>Password
         <input
@@ -334,7 +334,7 @@ function DocumentDetail({ user, doc, onBack, run }) {
   return (
     <>
       <div className="topbar"><div className="page-title"><h1>{doc.number}</h1><p>{doc.clientName} / {doc.service}</p></div><button className="btn secondary" onClick={onBack}>Back</button></div>
-      {doc.type === "doc1" && <SalesCostSummary doc={doc} />}
+      {doc.type === "doc1" && !engineerCompleted && <SalesCostSummary doc={doc} />}
       {managementReview ? (
         <ManagementReview user={user} doc={doc} run={run} />
       ) : engineerCompleted ? (
@@ -373,7 +373,7 @@ function ManagementReview({ user, doc, run }) {
   const pending = doc.status === "Pending Management";
   const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store Manager");
   return (
-    <ActionPanel title="Store Manager Submission" enabled={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, {}), "Document approved and completed.")}>
+      <ActionPanel title="Store Manager Submission" enabled={pending} initiallyEditing={pending} actionLabel="Approve" onAction={() => run(() => api.management(user, doc.id, {}), "Document approved and completed.")}>
       <div className="form-grid">
         <p><strong>Submitted By</strong><br />{storeName}</p>
         <p><strong>Submitted At</strong><br />{doc.store?.approvedAt ? formatDate(doc.store.approvedAt) : "-"}</p>
@@ -386,6 +386,7 @@ function ManagementReview({ user, doc, run }) {
 
 function MaintenanceCertificate({ user, doc }) {
   const printId = `maintenance-certificate-${doc.id}`;
+  const stockPrintId = `maintenance-stock-requisition-${doc.id}`;
   async function download() {
     const blob = await api.downloadDocument(user, doc.id, "maintenance-certificate");
     const url = URL.createObjectURL(blob);
@@ -408,9 +409,14 @@ function MaintenanceCertificate({ user, doc }) {
         <div className="button-row">
           <button className="btn" onClick={download}>Download General Maintenance PDF</button>
           <button className="btn secondary" onClick={() => printElementById(printId)}>Print General Maintenance</button>
+          <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Requisition</button>
+          <button className="btn" onClick={() => printElementsByIds([printId, stockPrintId])}>Print All</button>
         </div>
       </div>
-      <MaintenanceDocumentPreview doc={doc} printId={printId} certificate />
+      <div className="document-preview-grid">
+        <MaintenanceDocumentPreview doc={doc} printId={printId} certificate />
+        <StockRequisitionPreview doc={{ ...doc, store: { items: doc.maintenance?.items || [] } }} printId={stockPrintId} />
+      </div>
     </section>
   );
 }
@@ -617,7 +623,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      <ActionPanel enabled={salesOpen} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
+      <ActionPanel enabled={salesOpen} initiallyEditing={doc.status === "Pending Sales"} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -640,12 +646,12 @@ function Doc1Actions({ user, doc, run }) {
       </ActionPanel>
       {!salesOnly && (
         <>
-          <ActionPanel title="Accounts Section" enabled={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
+          <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
             <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
-              <ActionPanel title="Store Section" enabled={storeOpen} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
+              <ActionPanel title="Store Section" enabled={storeOpen} initiallyEditing={doc.status === "Pending Store"} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
                 <OnboardingPreview doc={doc} printId={storeOnboardingPrintId} extraClass="print-only-document" />
                 <StockRequisitionPreview doc={{ ...doc, store: { ...doc.store, items } }} printId={storeStockPrintId} extraClass="print-only-document" />
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
@@ -656,7 +662,7 @@ function Doc1Actions({ user, doc, run }) {
                 </div></div>}
               </ActionPanel>
               {!storeManager && (
-                <ActionPanel title="Management Approval" enabled={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
+                <ActionPanel title="Management Approval" enabled={managementOpen} initiallyEditing={doc.status === "Pending Management"} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Document completed.")}>
                   <label>Approval Notes<textarea disabled={!managementOpen} value={managementRemarks} onChange={(e) => setManagementRemarks(e.target.value)} /></label>
                 </ActionPanel>
               )}
@@ -673,13 +679,12 @@ function MaintenanceActions({ user, doc, run }) {
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const accountsOnly = user.role === "Accounts";
   const [hodRemarks, setHodRemarks] = useState(doc.hod?.remarks || "");
-  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   const hodPrintId = `hod-maintenance-print-${doc.id}`;
   return (
     <>
       <section className="panel"><h2>General Maintenance Details</h2><p><strong>Fault</strong><br />{doc.maintenance?.fault}</p><p><strong>Recommended Action</strong><br />{doc.maintenance?.action}</p></section>
       {!accountsOnly && (
-        <ActionPanel title="HOD Approval" enabled={hodOpen} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
+        <ActionPanel title="HOD Approval" enabled={hodOpen} initiallyEditing={doc.status === "Pending HOD"} actionLabel="Approve to Accounts" onAction={() => run(() => api.hod(user, doc.id, { remarks: hodRemarks }), "Moved to Accounts.")}>
           <MaintenanceDocumentPreview
             doc={{
               ...doc,
@@ -700,19 +705,24 @@ function MaintenanceActions({ user, doc, run }) {
           </div>
         </ActionPanel>
       )}
-      <ActionPanel title="Accounts Billing" enabled={accountsOpen} actionLabel="Complete General Maintenance" onAction={() => run(() => api.accounts(user, doc.id, accounts), "General Maintenance completed.")}>
-        <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+      <ActionPanel title="Accounts Equipment Review" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Engineer" onAction={() => run(() => api.accounts(user, doc.id, {}), "General Maintenance equipment submitted to Engineer.")}>
+        <ReadOnlyEquipment title="Equipment Used" items={doc.maintenance?.items || []} />
       </ActionPanel>
     </>
   );
 }
 
-function ActionPanel({ title, enabled, actionLabel, onAction, children }) {
+function ActionPanel({ title, enabled, initiallyEditing = false, actionLabel, onAction, children }) {
+  const [editing, setEditing] = useState(enabled && initiallyEditing);
   return (
-    <form className="panel" onSubmit={(event) => { event.preventDefault(); onAction(); }}>
+    <form className="panel" onSubmit={(event) => { event.preventDefault(); if (enabled && editing) onAction(); }}>
       {title && <div className="section-title"><h2>{title}</h2></div>}
-      {children}
-      {enabled && <div className="button-row"><button className="btn">{actionLabel}</button></div>}
+      <fieldset disabled={!enabled || !editing}>
+        {children}
+      </fieldset>
+      {enabled && <div className="button-row">
+        {editing ? <button className="btn">{actionLabel}</button> : <button className="btn secondary" type="button" onClick={() => setEditing(true)}>Edit</button>}
+      </div>}
     </form>
   );
 }

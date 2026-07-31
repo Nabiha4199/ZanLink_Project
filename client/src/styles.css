@@ -536,6 +536,13 @@
   margin-top: 0;
 }
 
+.panel fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
 .final-documents {
   display: grid;
   gap: 16px;
