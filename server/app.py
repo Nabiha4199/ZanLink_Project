@@ -52,6 +52,14 @@ CLIENT_CONFIRMATION_USD_LIMIT = 400
 MAX_CONFIRMATION_IMAGE_BYTES = 5 * 1024 * 1024
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
+ALLOWED_EMAIL_DOMAINS = sorted(
+    {
+        domain.strip().lower()
+        for domain in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",")
+        if domain.strip()
+    }
+    | {ALLOWED_EMAIL_DOMAIN, "iitmz.ac.in"}
+)
 PASSWORD_RESET_TOKENS = {}
 MICROSOFT_LOGIN_CODES = {}
 EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
@@ -59,6 +67,29 @@ USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
 MONTHLY_NUMBER_PATTERN = re.compile(r"^(?:(?P<label>Zanlink)/)?(?P<year>\d{4})/(?P<month>\d{2})/(?:(?P<prefix>[A-Z]+)-)?(?P<value>\d{4,6})$")
 DOCUMENT_NUMBER_PREFIXES = {"doc1": "ONB", "maintenance": "MNT"}
+DEFAULT_ITEM_PRICES = [
+    {"id": "ITM-019", "description": "D Link Switch 16 Port", "unitCostUsd": 69}, {"id": "ITM-020", "description": "D Link Switch 24 Ports", "unitCostUsd": 0},
+    {"id": "ITM-021", "description": "D Link Switch 8 Ports", "unitCostUsd": 18}, {"id": "ITM-022", "description": "Extension Plugs", "unitCostUsd": 20},
+    {"id": "ITM-023", "description": "EnGenius (INT)/ ENGENIUS FIT WI-FI 6", "unitCostUsd": 116}, {"id": "ITM-024", "description": "EnGenius 2.4GHz+5GHz 11ac/b/g/n Dual", "unitCostUsd": 140},
+    {"id": "ITM-025", "description": "EnGenius FIT Series Management", "unitCostUsd": 134}, {"id": "ITM-026", "description": "EnGenius (INT) PRODUCT LFP", "unitCostUsd": 370},
+    {"id": "ITM-027", "description": "EnGenius (INT) PRODUCT 1102A1359300", "unitCostUsd": 134}, {"id": "ITM-028", "description": "Face Plate Modules -Double", "unitCostUsd": 8},
+    {"id": "ITM-029", "description": "Fate Modules - Single", "unitCostUsd": 5}, {"id": "ITM-030", "description": "FTP Cable (Roll)", "unitCostUsd": 269},
+    {"id": "ITM-031", "description": "FTTx-OSD-C SC/PC 4 core inclu", "unitCostUsd": 14}, {"id": "ITM-032", "description": "Inverter 3K-5KVA/ 48VDC", "unitCostUsd": 0},
+    {"id": "ITM-033", "description": "Invertor SK 1100VA 12V", "unitCostUsd": 0}, {"id": "ITM-034", "description": "Linksys Wireless Router", "unitCostUsd": 57},
+    {"id": "ITM-035", "description": "Mikrotik 2011", "unitCostUsd": 132}, {"id": "ITM-036", "description": "Mikrotik Billing Router RB 750", "unitCostUsd": 86},
+    {"id": "ITM-037", "description": "Mikrotik Billing Router RB 952UI", "unitCostUsd": 71}, {"id": "ITM-038", "description": "Mikrotik Router 1100", "unitCostUsd": 374},
+    {"id": "ITM-039", "description": "MIMO OMNI WI-FI ANTENNAE (UBIQ", "unitCostUsd": 319}, {"id": "ITM-040", "description": "Media convertor 1G", "unitCostUsd": 57},
+    {"id": "ITM-041", "description": "Media convertor 10/100", "unitCostUsd": 18}, {"id": "ITM-042", "description": "NANO STATION M2", "unitCostUsd": 108},
+    {"id": "ITM-043", "description": "NANO STATION M5", "unitCostUsd": 96}, {"id": "ITM-044", "description": "ODF Patch panel 48C fiber", "unitCostUsd": 0},
+    {"id": "ITM-045", "description": "ONU Adaptor", "unitCostUsd": 12}, {"id": "ITM-046", "description": "Panel 12 Ports", "unitCostUsd": 0},
+    {"id": "ITM-047", "description": "Patch Panel 24 Ports Fiber", "unitCostUsd": 0}, {"id": "ITM-048", "description": "Patch panel 48 Ports Fiber", "unitCostUsd": 0},
+    {"id": "ITM-049", "description": "Panel Cat 6", "unitCostUsd": 0}, {"id": "ITM-050", "description": "Pipe 1 & 1/2\"", "unitCostUsd": 40},
+]
+DELIVERY_NOTE_TERMS = """If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.
+
+1. During the test period, the device is entirely client's responsibility. If the device becomes damaged for whatever reason, the client will be charged for it.
+
+2. Client should make payments for any device/accessories or transport cost applicable within 5 days of the Invoice attached with this note. If client fails to settle the bill within this period, ZANLINK will either remove the device from client's premises and/or will deduct any applicable cost from client's subscription costs."""
 
 
 USERS = [
@@ -111,7 +142,8 @@ def history(user_id: str, action: str, note: str = "", user_name: str | None = N
 
 
 def confirmation_owner(equipment: list[dict], currency: str) -> str:
-    limit = CLIENT_CONFIRMATION_USD_LIMIT if currency == "USD" else CLIENT_CONFIRMATION_USD_LIMIT * USD_TO_TZS_RATE
+    rate = STATE["pricing"]["usdToTzsRate"] if "STATE" in globals() else USD_TO_TZS_RATE
+    limit = CLIENT_CONFIRMATION_USD_LIMIT if currency == "USD" else CLIENT_CONFIRMATION_USD_LIMIT * rate
     equipment_total = sum(
         float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0)
         for item in equipment
@@ -233,6 +265,7 @@ STATE = {
     ],
     "summaries": [],
     "notifications": [],
+    "pricing": {"usdToTzsRate": USD_TO_TZS_RATE, "items": deepcopy(DEFAULT_ITEM_PRICES)},
 }
 
 
@@ -309,13 +342,14 @@ def available_username(email: str) -> str:
 
 
 def is_allowed_email(email: str) -> bool:
-    return email.endswith(f"@{ALLOWED_EMAIL_DOMAIN}")
+    return any(email.endswith(f"@{domain}") for domain in ALLOWED_EMAIL_DOMAINS)
 
 
 def require_allowed_email(value: str | None, action: str = "use") -> str:
     email = normalize_email(value)
     if not is_allowed_email(email):
-        raise ValueError(f"Only {ALLOWED_EMAIL_DOMAIN} email accounts can {action}")
+        allowed_domains = ", ".join(ALLOWED_EMAIL_DOMAINS)
+        raise ValueError(f"Only {allowed_domains} email accounts can {action}")
     return email
 
 
@@ -588,7 +622,6 @@ def generate_summary(doc: dict) -> dict:
     subtotal = sum(float(item.get("issuedQty") or 0) * float(item.get("unitCost") or 0) for item in items)
     labor_charge = float(doc.get("sales", {}).get("laborCharge") or 0)
     billed_amount = float(doc.get("accounts", {}).get("billingAmount") or 0)
-    created_by = find_user(doc.get("createdBy"))
     summary = {
         "id": str(uuid4()),
         "number": next_number("summary"),
@@ -606,8 +639,7 @@ def generate_summary(doc: dict) -> dict:
         "installationCost": labor_charge,
         "transportCost": 0,
         "grandTotal": billed_amount,
-        "zanlinkStaff": doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or (created_by["name"] if created_by else user_display_name(doc.get("createdBy"), "")),
-        "terms": "If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.",
+        "terms": DELIVERY_NOTE_TERMS,
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
     }
@@ -624,6 +656,13 @@ def parse_iso(value: str | None) -> datetime:
         return datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
     except ValueError:
         return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def history_action_at(doc: dict, *actions: str) -> str | None:
+    for entry in reversed(doc.get("history", [])):
+        if entry.get("action") in actions:
+            return entry.get("at")
+    return None
 
 
 def latest_history_note(doc: dict, *actions: str) -> str:
@@ -824,9 +863,9 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Finance & Billing")
-    is_billed = bool(doc.get("accounts", {}).get("invoiceNumber") or float(doc.get("accounts", {}).get("billingAmount") or 0) > 0)
+    is_billed = bool(str(doc.get("accounts", {}).get("invoiceNumber") or "").strip())
     processed_at = parse_iso(doc.get("accounts", {}).get("processedAt"))
-    billing_date = processed_at.strftime("%d/%m/%Y") if processed_at != datetime.min.replace(tzinfo=timezone.utc) else "-"
+    billing_date = processed_at.strftime("%d/%m/%Y") if is_billed and processed_at != datetime.min.replace(tzinfo=timezone.utc) else "-"
     draw_label_value(pdf, "Billing Confirmation", "Billed" if is_billed else "Not Billed", 22 * mm, y - 4, 56 * mm)
     draw_label_value(pdf, "User Created in System", "Yes" if is_billed else "No", 85 * mm, y - 4, 103 * mm)
     draw_label_value(pdf, "Date", billing_date, 22 * mm, y - 18 * mm, 56 * mm)
@@ -845,11 +884,16 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     draw_header(pdf, "STOCK REQUISITION FORM", doc)
+    is_maintenance = doc.get("type") == "maintenance"
     engineer_name = doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or user_display_name(doc.get("createdBy"), "Engineer")
     accounts_name = doc.get("accounts", {}).get("processedByName") or user_display_name(doc.get("accounts", {}).get("processedBy"), "Accounts")
     store_name = doc.get("store", {}).get("approvedByName") or user_display_name(doc.get("store", {}).get("approvedBy"), "Store")
     pdf.setFont("Helvetica", 9)
-    pdf.drawRightString(width - 22 * mm, height - 42 * mm, f"Install Requisition No. {doc['number']}")
+    pdf.drawRightString(
+        width - 22 * mm,
+        height - 42 * mm,
+        f"{'General Maintenance No.' if is_maintenance else 'Install Requisition No.'} {doc['number']}",
+    )
 
     rows = [["S/N", "ITEM ID", "DESCRIPTION", "QUANTITY REQUESTED", "QUANTITY ISSUED"]]
     for index, item in enumerate(doc.get("store", {}).get("items", []), start=1):
@@ -887,13 +931,43 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf.setFont("Helvetica", 10)
     pdf.drawString(26 * mm, y - 4, doc.get("engineer", {}).get("notes") or "-")
 
-    signature_rows = [
-        ("Requested by", engineer_name, doc.get("createdByRole", "Engineer"), doc.get("createdAt")),
-        ("Costed by", doc.get("sales", {}).get("submittedByName", "Not recorded"), doc.get("sales", {}).get("submittedByRole", "Sales"), doc.get("sales", {}).get("submittedAt")),
-        ("Billed by", accounts_name, doc.get("accounts", {}).get("processedByRole", "Accounts"), doc.get("accounts", {}).get("processedAt")),
-        ("Issued by", store_name, doc.get("store", {}).get("approvedByRole", "Store"), doc.get("store", {}).get("approvedAt")),
-        ("Approved by", doc.get("management", {}).get("approvedByName", "Not recorded"), doc.get("management", {}).get("approvedByRole", "Management"), doc.get("management", {}).get("approvedAt")),
-    ]
+    costed_name = (
+        doc.get("sales", {}).get("submittedByName")
+        or doc.get("sales", {}).get("requestedBy")
+        or user_display_name(doc.get("sales", {}).get("submittedBy"), "Not recorded")
+    )
+    if is_maintenance:
+        hod_name = doc.get("hod", {}).get("approvedByName") or user_display_name(doc.get("hod", {}).get("approvedBy"), "Not recorded")
+        signature_rows = [
+            ("Requested by", engineer_name, doc.get("createdByRole", "Engineer"), doc.get("createdAt")),
+            (
+                "Reviewed by HOD",
+                hod_name,
+                doc.get("hod", {}).get("approvedByRole", "HOD"),
+                doc.get("hod", {}).get("approvedAt") or history_action_at(doc, "HOD approved General Maintenance"),
+            ),
+            (
+                "Reviewed by Accounts",
+                accounts_name,
+                doc.get("accounts", {}).get("processedByRole", "Accounts"),
+                doc.get("accounts", {}).get("processedAt") or history_action_at(doc, "General Maintenance equipment reviewed"),
+            ),
+        ]
+    else:
+        signature_rows = [
+            ("Requested by", engineer_name, doc.get("createdByRole", "Engineer"), doc.get("createdAt")),
+            (
+                "Costed by",
+                costed_name,
+                doc.get("sales", {}).get("submittedByRole", "Sales"),
+                doc.get("sales", {}).get("submittedAt")
+                or history_action_at(doc, "Sales cost submitted", "Sales cost updated", "Sales amount added")
+                or doc.get("sales", {}).get("requestedDate"),
+            ),
+            ("Billed by", accounts_name, doc.get("accounts", {}).get("processedByRole", "Accounts"), doc.get("accounts", {}).get("processedAt") or history_action_at(doc, "Billing added")),
+            ("Issued by", store_name, doc.get("store", {}).get("approvedByRole", "Store"), doc.get("store", {}).get("approvedAt")),
+            ("Approved by", doc.get("management", {}).get("approvedByName", "Not recorded"), doc.get("management", {}).get("approvedByRole", "Management"), doc.get("management", {}).get("approvedAt")),
+        ]
     y -= 42 * mm
     for label, name, position, acted_at in signature_rows:
         acted_date = parse_iso(acted_at).strftime("%d/%m/%Y") if acted_at else "Not recorded"
@@ -982,21 +1056,28 @@ def build_client_summary_pdf(summary: dict, doc: dict | None) -> BytesIO:
     pdf.setFont("Helvetica", 6.5)
     text = pdf.beginText(16 * mm, y - 8)
     for line in [
-        summary.get("terms", ""),
-        "1. During the test period, the device is entirely client's responsibility. If damaged, the client will be charged for it.",
-        "2. Client should make payments for any device/accessories or transport cost applicable within 5 days of invoice attachment.",
+        "If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises.",
+        "After that the client should either return the device(s) or will be charged for it.",
+        "",
+        "1. During the test period, the device is entirely client's responsibility. If the device becomes damaged for whatever reason, the client will",
+        "be charged for it.",
+        "",
+        "2. Client should make payments for any device/accessories or transport cost applicable within 5 days of the Invoice attached with this",
+        "note. If client fails to settle the bill within this period, ZANLINK will either remove the device from client's premises and/or will deduct",
+        "any applicable cost from client's subscription costs.",
     ]:
-        text.textLine(line[:132])
+        text.textLine(line)
     pdf.drawText(text)
 
     y = 58 * mm
     pdf.setFont("Helvetica", 8)
     pdf.drawString(16 * mm, y, f"Name of Customer: {summary.get('customerName') or (doc or {}).get('clientName', '')}")
-    pdf.drawString(112 * mm, y, f"Name of ZANLINK Staff: {summary.get('zanlinkStaff') or '-'}")
-    pdf.drawString(16 * mm, y - 22 * mm, "Signature")
-    pdf.drawString(112 * mm, y - 22 * mm, "Signature")
-    pdf.line(16 * mm, y - 15 * mm, 76 * mm, y - 15 * mm)
-    pdf.line(112 * mm, y - 15 * mm, 178 * mm, y - 15 * mm)
+    pdf.drawString(112 * mm, y, "Name of ZANLINK Staff:")
+    pdf.line(151 * mm, y - 2 * mm, 194 * mm, y - 2 * mm)
+    pdf.drawString(16 * mm, y - 22 * mm, "Signature:")
+    pdf.line(35 * mm, y - 24 * mm, 100 * mm, y - 24 * mm)
+    pdf.drawString(112 * mm, y - 22 * mm, "Signature:")
+    pdf.line(131 * mm, y - 24 * mm, 194 * mm, y - 24 * mm)
 
     pdf.showPage()
     pdf.save()
@@ -1094,6 +1175,7 @@ def health():
         "microsoftSignInConfigured": bool(microsoft_client()),
         "microsoftAuthInstalled": bool(msal),
         "allowedEmailDomain": ALLOWED_EMAIL_DOMAIN,
+        "allowedEmailDomains": ALLOWED_EMAIL_DOMAINS,
     })
 
 
@@ -1106,6 +1188,49 @@ def users():
 @app.get("/api/account")
 def account():
     return jsonify(public_user(current_user()))
+
+
+@app.get("/api/pricing")
+def pricing():
+    current_user()
+    return jsonify(deepcopy(STATE["pricing"]))
+
+
+@app.patch("/api/pricing")
+def update_pricing():
+    require_system_admin(current_user())
+    payload = request.get_json(force=True)
+    try:
+        rate = float(payload.get("usdToTzsRate"))
+    except (TypeError, ValueError):
+        raise ValueError("USD to TZS rate must be a number")
+    if rate <= 0:
+        raise ValueError("USD to TZS rate must be greater than zero")
+
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("At least one priced item is required")
+
+    cleaned_items = []
+    seen_ids = set()
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Item {index} is invalid")
+        item_id = require_text(item, "id", f"Item {index} ID", max_length=80)
+        if item_id in seen_ids:
+            raise ValueError("Item IDs must be unique")
+        seen_ids.add(item_id)
+        description = require_text(item, "description", f"Item {index} description", max_length=180)
+        try:
+            unit_cost_usd = float(item.get("unitCostUsd"))
+        except (TypeError, ValueError):
+            raise ValueError(f"Item {index} USD cost must be a number")
+        if unit_cost_usd < 0:
+            raise ValueError(f"Item {index} USD cost cannot be negative")
+        cleaned_items.append({"id": item_id, "description": description, "unitCostUsd": unit_cost_usd})
+
+    STATE["pricing"] = {"usdToTzsRate": rate, "items": cleaned_items}
+    return jsonify(deepcopy(STATE["pricing"]))
 
 
 @app.post("/api/users")
@@ -1438,6 +1563,13 @@ def create_doc1():
         raise ValueError("Please select a valid onboarding type")
     client, location, contact, geo_location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="Stock item")
+    for item in items:
+        catalog_item = next((entry for entry in STATE["pricing"]["items"] if entry["id"] == item["itemId"]), None)
+        if not catalog_item or catalog_item["description"] != item["name"]:
+            raise ValueError("Select an item from the approved equipment list")
+        item["unitCostUsd"] = catalog_item["unitCostUsd"]
+        item["unitCost"] = catalog_item["unitCostUsd"] * STATE["pricing"]["usdToTzsRate"]
+        item["costCurrency"] = "TZS"
     owner = confirmation_owner(items, "TZS")
     confirmation = require_confirmation_image(payload) if owner == "Engineer" else None
     if confirmation:
@@ -1482,6 +1614,15 @@ def create_maintenance():
     payload = request.get_json(force=True)
     client, location, contact, geo_location = registered_client_details(payload)
     items = validate_items(payload.get("items", []), context="General Maintenance material")
+    for item in items:
+        catalog_item = next((entry for entry in STATE["pricing"]["items"] if entry["id"] == item["itemId"]), None)
+        if not catalog_item or catalog_item["description"] != item["name"]:
+            raise ValueError("Select an item from the approved equipment list")
+        item["issuedQty"] = item["requestedQty"]
+        item["unitCostUsd"] = catalog_item["unitCostUsd"]
+        item["unitCost"] = 0
+        item["costCurrency"] = "TZS"
+        item["purpose"] = "General Maintenance"
     doc = {
         "id": str(uuid4()),
         "type": "maintenance",
@@ -1519,7 +1660,7 @@ def sales_submit(document_id: str):
     require_status(doc, "Pending Sales", "Returned to Sales", "Pending Accounts")
     payload = request.get_json(force=True)
     client_name = require_text(payload, "clientName", "Client name")
-    location = require_text(payload, "location", "Location")
+    location = doc["location"]
     subscription = require_text(payload, "subscription", "Subscription")
     currency = str(payload.get("currency") or "TZS").upper()
     if currency not in {"TZS", "USD"}:
@@ -1534,6 +1675,7 @@ def sales_submit(document_id: str):
             raise ValueError(f"Sales equipment {index} must match the original request")
         store_item["unitCost"] = sales_item["unitCost"]
         store_item["costCurrency"] = currency
+        sales_item["unitCostUsd"] = store_item.get("unitCostUsd")
         sales_item["costCurrency"] = currency
     package_cost = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
     owner = doc.get("confirmationRequiredFrom") or confirmation_owner(doc.get("store", {}).get("items", []), "TZS")

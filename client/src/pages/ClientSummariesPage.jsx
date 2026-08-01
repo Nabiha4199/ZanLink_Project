@@ -2,6 +2,12 @@ import React, { useState } from "react";
 import { api } from "../services/api";
 import { money } from "../utils/formatters";
 
+const DELIVERY_NOTE_TERMS = `If any of the devices above is provided on test basis, it will only be kept for a maximum period of 5 days at client's premises. After that the client should either return the device(s) or will be charged for it.
+
+1. During the test period, the device is entirely client's responsibility. If the device becomes damaged for whatever reason, the client will be charged for it.
+
+2. Client should make payments for any device/accessories or transport cost applicable within 5 days of the Invoice attached with this note. If client fails to settle the bill within this period, ZANLINK will either remove the device from client's premises and/or will deduct any applicable cost from client's subscription costs.`;
+
 export default function ClientSummariesPage({ user, summaries, documents, showError }) {
   if (!summaries.length) return <div className="panel empty">No delivery notes generated yet.</div>;
 
@@ -122,8 +128,8 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
           }
 
           .client-delivery .signature-pair .signature-field {
-            border-bottom: 1px solid #000;
-            padding-bottom: 0.55rem;
+            display: grid;
+            gap: 0.35rem;
           }
 
           .client-delivery .signature-pair .signature-field.full-width {
@@ -138,6 +144,11 @@ export default function ClientSummariesPage({ user, summaries, documents, showEr
 
           .client-delivery .signature-pair .field-value {
             font-size: 9pt;
+          }
+
+          .client-delivery .signature-pair .signature-line {
+            height: 1.5rem;
+            border-bottom: 1px solid #000;
           }
 
           .client-delivery .delivery-table {
@@ -373,23 +384,22 @@ function ClientSummary({ user, summary, doc, showError }) {
 
       <section className="terms-box">
         <strong>Terms & Conditions</strong>
-        <p>{summary.terms || "-"}</p>
+        <p>{DELIVERY_NOTE_TERMS}</p>
       </section>
 
       <div className="signature-pair">
         <div className="field signature-field">
           <div className="field-label">Name of Customer</div>
           <div className="field-value">{customerName}</div>
+          <div className="field-label">Signature</div>
+          <div className="signature-line" aria-label="Customer signature to be completed by hand" />
         </div>
 
         <div className="field signature-field">
           <div className="field-label">Name of ZANLINK Staff</div>
-          <div className="field-value">{summary.zanlinkStaff}</div>
-        </div>
-
-        <div className="field signature-field full-width">
-          <div className="field-label">Contact</div>
-          <div className="field-value">{summary.customerContact || doc?.contact || "-"}</div>
+          <div className="signature-line" aria-label="ZANLINK staff name to be completed by hand" />
+          <div className="field-label">Signature</div>
+          <div className="signature-line" aria-label="ZANLINK staff signature to be completed by hand" />
         </div>
       </div>
 

@@ -40,6 +40,13 @@ const icons = {
       <path d="M7 20h10" />
     </>
   ),
+  pricing: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7v10" />
+      <path d="M14.5 9.5c-.6-.6-1.4-.9-2.5-.9-1.5 0-2.5.8-2.5 2s1 1.8 2.5 2.1 2.5.9 2.5 2.1-1 2-2.5 2c-1.1 0-2.1-.4-2.8-1" />
+    </>
+  ),
   summaries: (
     <>
       <path d="M5 5h14v14H5Z" />
@@ -100,6 +107,7 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
         {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><NavIcon name="maintenance" />General Maintenance</button>}
         {user.role === "System Admin" && <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><NavIcon name="summaries" />Delivery Note</button>}
         {user.role === "System Admin" && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><NavIcon name="users" />User Management</button>}
+        {user.role === "System Admin" && <button className={view === "pricing" ? "active" : ""} onClick={() => onNavigate("pricing")}><NavIcon name="pricing" />Item Pricing</button>}
         <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><NavIcon name="reports" />Reports</button>
       </nav>
       <button className="tour-launch" onClick={onStartTour}><NavIcon name="tour" />Guided tour</button>
