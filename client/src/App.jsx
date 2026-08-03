@@ -655,7 +655,8 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
 
 function Doc1Actions({ user, doc, run }) {
   const storeManager = user.department === "Store" || ["Store", "Store Manager"].includes(user.role);
-  const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales"].includes(doc.status);
+  const requiresHocApproval = doc.serviceType === "new_installation";
+  const salesOpen = canAct(user, "Sales") && (requiresHocApproval ? ["Pending Sales", "Returned to Sales"] : ["Pending Sales", "Returned to Sales", "Pending Accounts"]).includes(doc.status);
   const hocOpen = canAct(user, "HOC") && doc.status === "Pending HOC";
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
@@ -698,7 +699,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel="Submit to HOC" onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), "Submitted to Head of Commercial.")}>
+      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel={requiresHocApproval ? "Submit to HOC" : doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), requiresHocApproval ? "Submitted to Head of Commercial." : doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -726,7 +727,7 @@ function Doc1Actions({ user, doc, run }) {
           />
         )}
       </ActionPanel>}
-      {canAct(user, "HOC") && <HocApproval user={user} doc={doc} enabled={hocOpen} run={run} />}
+      {requiresHocApproval && canAct(user, "HOC") && <HocApproval user={user} doc={doc} enabled={hocOpen} run={run} />}
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>

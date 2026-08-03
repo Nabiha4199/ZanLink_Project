@@ -1657,8 +1657,12 @@ def sales_submit(document_id: str):
     doc = find_document(document_id)
     if not doc or doc["type"] != "doc1":
         raise ValueError("Document 1 not found")
-    was_submitted = doc.get("status") == "Returned to Sales"
-    require_status(doc, "Pending Sales", "Returned to Sales")
+    requires_hoc_approval = doc.get("serviceType", "new_installation") == "new_installation"
+    was_submitted = not requires_hoc_approval and doc.get("status") == "Pending Accounts"
+    allowed_statuses = ["Pending Sales", "Returned to Sales"]
+    if not requires_hoc_approval:
+        allowed_statuses.append("Pending Accounts")
+    require_status(doc, *allowed_statuses)
     payload = request.get_json(force=True)
     client_name = require_text(payload, "clientName", "Client name")
     location = doc["location"]
@@ -1722,11 +1726,16 @@ def sales_submit(document_id: str):
         doc["clientConfirmation"] = confirmation
     elif not doc.get("clientConfirmation"):
         raise ValueError("Engineer client email confirmation screenshot is missing")
-    set_route(doc, "Pending HOC", "HOC")
+    next_status, next_department = ("Pending HOC", "HOC") if requires_hoc_approval else ("Pending Accounts", "Accounts")
+    set_route(doc, next_status, next_department)
     action = "Sales cost updated" if was_submitted else "Sales cost submitted"
-    detail = "Labor charge and equipment cost were updated for Head of Commercial approval." if was_submitted else "Labor charge and equipment cost were submitted to Head of Commercial."
+    destination = "Head of Commercial approval" if requires_hoc_approval else "Accounts"
+    detail = f"Labor charge and equipment cost were updated for {destination}." if was_submitted else f"Labor charge and equipment cost were submitted to {destination}."
     doc["history"].append(history(user["id"], action, detail, user["name"]))
-    notify("HOC", f"{doc['number']} is waiting for Head of Commercial approval.")
+    if requires_hoc_approval:
+        notify("HOC", f"{doc['number']} is waiting for Head of Commercial approval.")
+    else:
+        notify("Accounts", f"{doc['number']} is waiting for billing.")
     return jsonify(doc)
 
 

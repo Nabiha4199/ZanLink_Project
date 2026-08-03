@@ -92,13 +92,14 @@ function WorkflowModal({ doc, onClose }) {
           </div>
           <button className="btn secondary" type="button" onClick={onClose}>Close</button>
         </div>
-        <WorkflowTracker type={doc.type} status={doc.status} />
+        <WorkflowTracker doc={doc} />
       </section>
     </div>
   );
 }
 
-function WorkflowTracker({ type, status }) {
+function WorkflowTracker({ doc }) {
+  const { type, status } = doc;
   const stages = type === "maintenance" ? [
     ["Engineer Section", null],
     ["HOD Approval", "Pending HOD"],
@@ -107,7 +108,7 @@ function WorkflowTracker({ type, status }) {
     ["Engineer Section", null],
     ["Sales Section", "Pending Sales"],
     ["Client Confirmation", "Pending Client Confirmation"],
-    ["Head of Commercial Approval", "Pending HOC"],
+    ...(doc.serviceType === "new_installation" ? [["Head of Commercial Approval", "Pending HOC"]] : []),
     ["Accounts Section", "Pending Accounts"],
     ["Store Section", "Pending Store"],
     ["Management", "Pending Management"],

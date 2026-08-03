@@ -166,7 +166,6 @@ export default function LoginPage({ onLogin, showError }) {
             <div className="auth-bottom-links">
               <button type="button" onClick={() => switchMode("forgot")}>Forgot password?</button>
             </div>
-            <p className="form-helper">Accounts are created by a System Admin.</p>
           </>
         )}
 
