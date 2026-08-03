@@ -53,6 +53,7 @@ wsgi:app
 - `POST /api/documents/doc1`
 - `POST /api/documents/maintenance`
 - `POST /api/documents/<id>/sales`
+- `POST /api/documents/<id>/hoc`
 - `POST /api/documents/<id>/accounts`
 - `POST /api/documents/<id>/store`
 - `POST /api/documents/<id>/management`

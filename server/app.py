@@ -115,6 +115,7 @@ REGISTERABLE_ROLES = {
     "Store": {"role": "Store", "department": "Store"},
     "Management": {"role": "Management", "department": "Management"},
     "HOD": {"role": "Head of Department", "department": "HOD"},
+    "HOC": {"role": "Head of Commercial", "department": "HOC"},
 }
 
 MANAGEABLE_ROLES = {
@@ -1656,8 +1657,8 @@ def sales_submit(document_id: str):
     doc = find_document(document_id)
     if not doc or doc["type"] != "doc1":
         raise ValueError("Document 1 not found")
-    was_submitted = doc.get("status") == "Pending Accounts"
-    require_status(doc, "Pending Sales", "Returned to Sales", "Pending Accounts")
+    was_submitted = doc.get("status") == "Returned to Sales"
+    require_status(doc, "Pending Sales", "Returned to Sales")
     payload = request.get_json(force=True)
     client_name = require_text(payload, "clientName", "Client name")
     location = doc["location"]
@@ -1721,11 +1722,43 @@ def sales_submit(document_id: str):
         doc["clientConfirmation"] = confirmation
     elif not doc.get("clientConfirmation"):
         raise ValueError("Engineer client email confirmation screenshot is missing")
-    set_route(doc, "Pending Accounts", "Accounts")
+    set_route(doc, "Pending HOC", "HOC")
     action = "Sales cost updated" if was_submitted else "Sales cost submitted"
-    detail = "Labor charge and equipment cost were updated for Accounts." if was_submitted else "Labor charge and equipment cost were submitted to Accounts."
+    detail = "Labor charge and equipment cost were updated for Head of Commercial approval." if was_submitted else "Labor charge and equipment cost were submitted to Head of Commercial."
     doc["history"].append(history(user["id"], action, detail, user["name"]))
-    notify("Accounts", f"{doc['number']} is waiting for billing.")
+    notify("HOC", f"{doc['number']} is waiting for Head of Commercial approval.")
+    return jsonify(doc)
+
+
+@app.post("/api/documents/<document_id>/hoc")
+def hoc_submit(document_id: str):
+    user = current_user()
+    require_department(user, "HOC")
+    doc = find_document(document_id)
+    if not doc or doc["type"] != "doc1":
+        raise ValueError("Document 1 not found")
+    require_status(doc, "Pending HOC")
+    payload = request.get_json(force=True)
+    decision = str(payload.get("decision") or "").lower()
+    if decision not in {"approve", "decline"}:
+        raise ValueError("Select whether to approve or decline this onboarding")
+
+    doc["hoc"] = {
+        "decision": decision,
+        "reviewedBy": user["id"],
+        "reviewedByName": user["name"],
+        "reviewedByRole": user["role"],
+        "reviewedAt": now_iso(),
+        "remarks": optional_text(payload, "remarks"),
+    }
+    if decision == "approve":
+        set_route(doc, "Pending Accounts", "Accounts")
+        doc["history"].append(history(user["id"], "HOC approved onboarding", "Submitted to Accounts.", user["name"]))
+        notify("Accounts", f"{doc['number']} was approved by Head of Commercial and is waiting for billing.")
+    else:
+        set_route(doc, "Returned to Sales", "Sales")
+        doc["history"].append(history(user["id"], "HOC declined onboarding", "Returned to Sales for review.", user["name"]))
+        notify("Sales", f"{doc['number']} was declined by Head of Commercial and returned for review.")
     return jsonify(doc)
 
 

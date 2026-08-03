@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const roles = ["Engineer", "Sales", "Accounts", "Store", "Management", "HOD", "System Admin"];
+const roles = ["Engineer", "Sales", "HOC", "Accounts", "Store", "Management", "HOD", "System Admin"];
 const emptyUser = { name: "", email: "", role: "Engineer", password: "" };
 
 export default function UserManagementPage({ currentUser, users, onCreateUser, onUpdateUser, onDeleteUser }) {

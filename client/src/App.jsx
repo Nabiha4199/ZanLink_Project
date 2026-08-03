@@ -504,6 +504,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const engineerName = actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Engineer");
   const salesName = actorName(doc.sales?.submittedByName || doc.sales?.requestedBy, doc.sales?.submittedBy, "Sales");
   const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store");
+  const hocName = actorName(doc.hoc?.reviewedByName, doc.hoc?.reviewedBy, "Pending HOC approval");
   const managementName = actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Pending Management");
   const isBilled = Boolean(String(doc.accounts?.invoiceNumber || "").trim());
   const billingDate = isBilled && doc.accounts?.processedAt ? formatDate(doc.accounts.processedAt) : "-";
@@ -539,6 +540,8 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       </div>
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Prepared by" value={engineerName} /></div>
+      <h3>Head of Commercial Approval</h3>
+      <div className="paper-fields two"><Field label="Reviewed By" value={doc.hoc?.reviewedBy ? hocName : "Pending HOC approval"} /><Field label="Decision" value={doc.hoc?.decision ? doc.hoc.decision[0].toUpperCase() + doc.hoc.decision.slice(1) : "Pending"} /><Field label="Comments" value={doc.hoc?.remarks || "-"} /></div>
       <h3>Admin Stock Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value={storeName} /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
       <h3>Management Approval</h3>
@@ -652,7 +655,8 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
 
 function Doc1Actions({ user, doc, run }) {
   const storeManager = user.department === "Store" || ["Store", "Store Manager"].includes(user.role);
-  const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales", "Pending Accounts"].includes(doc.status);
+  const salesOpen = canAct(user, "Sales") && ["Pending Sales", "Returned to Sales"].includes(doc.status);
+  const hocOpen = canAct(user, "HOC") && doc.status === "Pending HOC";
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
   const managementOpen = canAct(user, "Management") && doc.status === "Pending Management";
@@ -694,7 +698,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={doc.status === "Pending Sales"} actionLabel={doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
+      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel="Submit to HOC" onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), "Submitted to Head of Commercial.")}>
         <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
@@ -722,6 +726,7 @@ function Doc1Actions({ user, doc, run }) {
           />
         )}
       </ActionPanel>}
+      {canAct(user, "HOC") && <HocApproval user={user} doc={doc} enabled={hocOpen} run={run} />}
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
@@ -750,6 +755,34 @@ function Doc1Actions({ user, doc, run }) {
         </>
       )}
     </>
+  );
+}
+
+function HocApproval({ user, doc, enabled, run }) {
+  const [remarks, setRemarks] = useState(doc.hoc?.remarks || "");
+  const engineerEquipment = doc.store?.items || [];
+  const salesEquipment = doc.sales?.equipment || [];
+  return (
+    <form className="panel" onSubmit={(event) => event.preventDefault()}>
+      <div className="section-title"><h2>Head of Commercial Approval</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div>
+      <div className="form-grid">
+        <p><strong>Engineer</strong><br />{actorName(doc.engineer?.submittedByName || doc.createdByName, doc.engineer?.submittedBy || doc.createdBy, "Not recorded")}</p>
+        <p><strong>Engineer Notes</strong><br />{doc.engineer?.notes || "-"}</p>
+        <p><strong>Sales Submitted By</strong><br />{actorName(doc.sales?.submittedByName || doc.sales?.requestedBy, doc.sales?.submittedBy, "Not recorded")}</p>
+        <p><strong>Subscription</strong><br />{doc.sales?.subscription || doc.service || "-"}</p>
+        <p><strong>Installation Cost</strong><br />{money(doc.sales?.laborCharge, doc.sales?.currency)}</p>
+        <p><strong>Equipment Cost</strong><br />{money(doc.sales?.packageCost, doc.sales?.currency)}</p>
+        <p><strong>Total Sales Cost</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p>
+        <p><strong>MRR</strong><br />{money(doc.sales?.mrr, doc.sales?.currency)}</p>
+      </div>
+      <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
+      <ReadOnlyEquipment title="Sales Equipment and Costs" items={salesEquipment} />
+      <label>Approval Comments<textarea disabled={!enabled} value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
+      {enabled && <div className="button-row">
+        <button className="btn" type="button" onClick={() => run(() => api.hoc(user, doc.id, { decision: "approve", remarks }), "Approved and submitted to Accounts.")}>Approve to Accounts</button>
+        <button className="btn danger" type="button" onClick={() => run(() => api.hoc(user, doc.id, { decision: "decline", remarks }), "Declined and returned to Sales.")}>Decline to Sales</button>
+      </div>}
+    </form>
   );
 }
 

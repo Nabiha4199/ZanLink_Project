@@ -35,6 +35,7 @@ export const api = {
   createDoc1: (user, payload) => request("/api/documents/doc1", { method: "POST", body: JSON.stringify(payload) }, user),
   createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, user),
   sales: (user, id, payload) => request(`/api/documents/${id}/sales`, { method: "POST", body: JSON.stringify(payload) }, user),
+  hoc: (user, id, payload) => request(`/api/documents/${id}/hoc`, { method: "POST", body: JSON.stringify(payload) }, user),
   clientConfirmation: (user, id, payload) => request(`/api/documents/${id}/client-confirmation`, { method: "POST", body: JSON.stringify(payload) }, user),
   accounts: (user, id, payload) => request(`/api/documents/${id}/accounts`, { method: "POST", body: JSON.stringify(payload) }, user),
   store: (user, id, payload) => request(`/api/documents/${id}/store`, { method: "POST", body: JSON.stringify(payload) }, user),

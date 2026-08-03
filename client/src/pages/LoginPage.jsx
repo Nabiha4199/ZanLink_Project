@@ -54,6 +54,7 @@ function PasswordField({ label, value, onChange, autoComplete, helper }) {
 const demoUsers = [
   ["Engineer", "Engineer"],
   ["Sales", "Sales"],
+  ["HOC", "Head of Commercial"],
   ["Accounts", "Accounts"],
   ["Store", "Store"],
   ["Management", "Management"],
