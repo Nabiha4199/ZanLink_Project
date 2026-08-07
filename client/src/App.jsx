@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
-import { currencies, defaultPricing, emptyItem, engineerStockItems, requestedServices, serviceTypes, subscriptionPackages } from "./config/workflow";
+import { defaultPricing, emptyItem, engineerStockItems, requestedServices, serviceTypes, subscriptionPackages } from "./config/workflow";
 import ClientsPage, { CountryCodePicker, countryCodes } from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -700,25 +700,23 @@ function Doc1Actions({ user, doc, run }) {
   return (
     <>
       {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel={requiresHocApproval ? "Submit to HOC" : doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), requiresHocApproval ? "Submitted to Head of Commercial." : doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
-        <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
           <label>Location<input readOnly value={doc.location || sales.location || "-"} /></label>
           {textInput("Survey Form No.", "surveyFormNo", sales, setSales, !salesOpen)}
-          <label>Money Type<select disabled={!salesOpen} value={sales.currency} onChange={(event) => setSales({ ...sales, currency: event.target.value })}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></label>
           {numberInput("Installation Cost/Labor Charge", "amount", sales, setSales, !salesOpen)}
-          <p><strong>Total Equipment Cost</strong><br />{money(equipmentTotal, sales.currency)}</p>
-          <p><strong>Total Cost from Sales</strong><br />{money(salesTotal, sales.currency)}</p>
           {numberInput("Additional NRR", "additionalNrr", sales, setSales, !salesOpen)}
-          <AutoTotal label="Total Sales Cost (Labor + Equipment)" value={salesTotal} currency={sales.currency} />
           {subscriptionInput(sales, setSales, !salesOpen)}
           {numberInput("MRR", "mrr", sales, setSales, !salesOpen)}
-          <AutoTotal label="Total Sales Cost" value={grandTotal} currency={sales.currency} />
           {textInput("Requested By", "requestedBy", sales, setSales, !salesOpen)}
           <label>Date<input type="date" readOnly value={sales.requestedDate} /></label>
           <label>Time<input readOnly value={formatTime(sales.requestedTime)} /></label>
         </div>
         <EquipmentCostEditor items={salesEquipment} setItems={setSalesEquipment} locked={!salesOpen} currency={sales.currency || "TZS"} />
+        <div className="equipment-total-bar sales-total-bar">
+          <strong>Sales Total</strong>
+          <span>{money(salesTotal, sales.currency)}</span>
+        </div>
         {salesOpen && salesMustConfirm && (
           <ConfirmationUpload
             value={clientConfirmation}
@@ -866,6 +864,7 @@ function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS"
       {items.map((item, index) => (
         <div className="item-row" key={index}>
           <label>Item<input disabled value={item.name || ""} readOnly /></label>
+          <label>Item ID<span className="readonly-value">{item.itemId || item.serialNumber || "-"}</span></label>
           <label>Req. Qty<span className="readonly-value">{item.requestedQty || 1}</span></label>
           <label>Unit Cost ({currency})<input required min="0" readOnly type="number" value={item.unitCost || ""} /></label>
           <AutoTotal label="Line Total" value={Number(item.requestedQty || 0) * Number(item.unitCost || 0)} currency={currency} compact />
@@ -876,7 +875,7 @@ function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS"
   );
 }
 
-function ReadOnlyEquipment({ title, items }) {
+function ReadOnlyEquipment({ title, items, simple = false }) {
   if (!items.length) return <div className="empty">No equipment added by Engineer.</div>;
   return (
     <div className="readonly-equipment">
@@ -885,14 +884,15 @@ function ReadOnlyEquipment({ title, items }) {
         {items.map((item, index) => (
           <div className="readonly-equipment-row" key={index}>
             <div className="readonly-equipment-main">
-              <span>Item</span>
               <strong>{item.name || "-"}</strong>
             </div>
-            <div className="readonly-equipment-meta">
-              <span><b>Req. Qty</b>{item.requestedQty || 1}</span>
-              <span><b>Purpose</b>{item.purpose || "-"}</span>
-              <span><b>Item ID</b>{item.itemId || item.serialNumber || "-"}</span>
-            </div>
+            {!simple && (
+              <div className="readonly-equipment-meta">
+                <span><b>Req. Qty</b>{item.requestedQty || 1}</span>
+                <span><b>Purpose</b>{item.purpose || "-"}</span>
+                <span><b>Item ID</b>{item.itemId || item.serialNumber || "-"}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
