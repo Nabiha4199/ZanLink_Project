@@ -36,10 +36,10 @@ function App() {
     const [accountData, docs, summaryData, reportData, clientData, userData, pricingData] = await Promise.all([
       api.account(user),
       api.documents(user, nextFilters),
-      user.role === "System Admin" ? api.summaries(user) : Promise.resolve([]),
+      ["System Admin", "Management"].includes(user.role) ? api.summaries(user) : Promise.resolve([]),
       api.reports(user),
       api.clients(user),
-      user.role === "System Admin" ? api.users(user) : Promise.resolve([]),
+      ["System Admin", "Management"].includes(user.role) ? api.users(user) : Promise.resolve([]),
       api.pricing(user),
     ]);
     setDocuments(docs);
@@ -192,14 +192,14 @@ function App() {
           <MaintenanceForm clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "General Maintenance submitted to HOD.")} />
         ) : view === "clients" ? (
           <ClientsPage clients={clients} onRegister={registerClient} />
-        ) : view === "users" && user.role === "System Admin" ? (
+        ) : view === "users" && ["System Admin", "Management"].includes(user.role) ? (
           <UserManagementPage currentUser={user} users={users} onCreateUser={createUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} />
-        ) : view === "pricing" && user.role === "System Admin" ? (
+        ) : view === "pricing" && ["System Admin", "Management"].includes(user.role) ? (
           <PricingManagementPage pricing={pricing} onSave={updatePricing} />
-        ) : view === "summaries" && user.role === "System Admin" ? (
+        ) : view === "summaries" && ["System Admin", "Management"].includes(user.role) ? (
           <ClientSummariesPage user={user} summaries={summaries} documents={documents} showError={showError} />
         ) : view === "reports" ? (
-          <ReportsPage reports={reports} />
+          <ReportsPage reports={reports} user={user} />
         ) : (
           <DashboardPage
             user={user}
@@ -261,14 +261,15 @@ function PasswordSetupCard({ onSubmit }) {
 }
 
 function Doc1Form({ clients, pricing, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", currency: "TZS", items: [{ ...emptyItem }] });
   const equipmentTotal = form.items.reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
-  const engineerMustConfirm = equipmentTotal < 1000000;
+  const engineerMustConfirm = equipmentTotal < (form.currency === "USD" ? 400 : 1000000);
   return (
     <FormShell title="New Document 1" subtitle="Customer onboarding and stock requisition starts from Engineer." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Sales">
       <div className="form-grid">
         <ClientFields clients={clients} form={form} setForm={setForm} />
         <ServiceSelect form={form} setForm={setForm} label="Requested Service" />
+        <label>Display Currency<select value={form.currency} onChange={(event) => { const currency = event.target.value; setForm({ ...form, currency, items: form.items.map((item) => ({ ...item, costCurrency: currency, unitCost: item.unitCostUsd ? (currency === "USD" ? item.unitCostUsd : item.unitCostUsd * Number(pricing.usdToTzsRate)) : item.unitCost })) }); }}><option value="TZS">TZS</option><option value="USD">USD</option></select></label>
         <label className="wide">Onboarding Type
           <div className="segmented-control">
             {serviceTypes.map(([value, label]) => (
@@ -285,7 +286,7 @@ function Doc1Form({ clients, pricing, onSubmit, onCancel }) {
         </label>
         <label className="wide">Engineer Notes<textarea value={form.engineerNotes} onChange={(event) => setForm({ ...form, engineerNotes: event.target.value })} /></label>
       </div>
-      <ItemEditor items={form.items} setItems={(items) => setForm({ ...form, items })} engineerRequest pricing={pricing} />
+      <ItemEditor items={form.items} setItems={(items) => setForm({ ...form, items })} engineerRequest pricing={pricing} currency={form.currency} />
       {engineerMustConfirm && (
         <ConfirmationUpload
           value={form.clientConfirmation}
@@ -360,7 +361,7 @@ function printElementsByIds(printIds) {
 }
 
 function DocumentDetail({ user, doc, onBack, run }) {
-  const managementReview = doc.type === "doc1" && user.role !== "System Admin" && (user.role === "Management" || user.department === "Management");
+  const managementReview = false;
   const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || (doc.workflowCompletedAt && user.role === "Engineer")) && (user.role === "Engineer" || user.role === "System Admin");
   const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
   return (
@@ -504,12 +505,12 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
   const engineerName = actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Engineer");
   const salesName = actorName(doc.sales?.submittedByName || doc.sales?.requestedBy, doc.sales?.submittedBy, "Sales");
   const storeName = actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Store");
-  const hocName = actorName(doc.hoc?.reviewedByName, doc.hoc?.reviewedBy, "Pending HOC approval");
+  const hocName = actorName(doc.hoc?.reviewedByName, doc.hoc?.reviewedBy, "-");
   const managementName = actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Pending Management");
   const isBilled = Boolean(String(doc.accounts?.invoiceNumber || "").trim());
   const billingDate = isBilled && doc.accounts?.processedAt ? formatDate(doc.accounts.processedAt) : "-";
   return (
-    <article id={printId} className={`paper-form ${extraClass}`}>
+    <article id={printId} className={`paper-form onboarding-form ${extraClass}`}>
       <header className="paper-head onboarding-head">
         <span className="paper-logo">zanlink</span>
         <div className="onboarding-title">
@@ -540,8 +541,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       </div>
       <h3>Engineering Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Requisition No" value={doc.number} /><Field label="Prepared by" value={engineerName} /></div>
-      <h3>Head of Commercial Approval</h3>
-      <div className="paper-fields two"><Field label="Reviewed By" value={doc.hoc?.reviewedBy ? hocName : "Pending HOC approval"} /><Field label="Decision" value={doc.hoc?.decision ? doc.hoc.decision[0].toUpperCase() + doc.hoc.decision.slice(1) : "Pending"} /><Field label="Comments" value={doc.hoc?.remarks || "-"} /></div>
+      {doc.hoc?.reviewedBy && <><h3>Head of Commercial Approval</h3><div className="paper-fields two"><Field label="Reviewed By" value={hocName} /><Field label="Decision" value={doc.hoc.decision ? doc.hoc.decision[0].toUpperCase() + doc.hoc.decision.slice(1) : "-"} /><Field label="Comments" value={doc.hoc.remarks || "-"} /></div></>}
       <h3>Admin Stock Confirmation</h3>
       <div className="paper-fields two"><Field label="Stock Availability" value="Confirmed" /><Field label="Stock issued by" value={storeName} /><Field label="Work Order Form No." value={`Zanlink/${doc.number}`} /><Field label="Date" value={formatDate(new Date())} /></div>
       <h3>Management Approval</h3>
@@ -549,7 +549,7 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       <h3>Finance & Billing</h3>
       <div className="paper-fields two"><Field label="Billing Confirmation" value={isBilled ? "Billed" : "Not Billed"} /><Field label="User Created in System" value={isBilled ? "Yes" : "No"} /><Field label="Date" value={billingDate} /><Field label="Received by" value={engineerName} /></div>
       {doc.clientConfirmation?.dataUrl && (
-        <section className="printed-confirmation">
+        <section className="printed-confirmation no-print">
           <h3>Client Email Confirmation</h3>
           <p>Uploaded by {doc.clientConfirmation.uploadedByName}</p>
           <img src={doc.clientConfirmation.dataUrl} alt="Client email confirmation screenshot" />
@@ -675,7 +675,7 @@ function Doc1Actions({ user, doc, run }) {
     requestedBy: doc.sales?.requestedBy || user.name || "",
     requestedDate: doc.sales?.requestedDate || new Date().toISOString().slice(0, 10),
     requestedTime: doc.sales?.requestedTime || new Date().toTimeString().slice(0, 5),
-    currency: doc.sales?.currency || "TZS",
+    currency: doc.sales?.currency || doc.engineer?.currency || "TZS",
   });
   const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
   const engineerEquipment = doc.store?.items || [];
@@ -699,7 +699,7 @@ function Doc1Actions({ user, doc, run }) {
 
   return (
     <>
-      {["Sales", "System Admin"].includes(user.role) && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel={requiresHocApproval ? "Submit to HOC" : doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), requiresHocApproval ? "Submitted to Head of Commercial." : doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
+      {canAct(user, "Sales") && <ActionPanel enabled={salesOpen} initiallyEditing={["Pending Sales", "Returned to Sales"].includes(doc.status)} actionLabel={requiresHocApproval ? "Submit to HOC" : doc.status === "Pending Accounts" ? "Update Sales Cost" : "Submit to Accounts"} onAction={() => run(() => api.sales(user, doc.id, { ...sales, clientConfirmation, packageCost: equipmentTotal, oneTimeTotal, grandTotal, equipment: salesEquipment }), requiresHocApproval ? "Submitted to Head of Commercial." : doc.status === "Pending Accounts" ? "Sales cost updated." : "Moved to Accounts.")}>
         <div className="form-grid">
           {textInput("Client Name", "clientName", sales, setSales, true)}
           <label>Location<input readOnly value={doc.location || sales.location || "-"} /></label>
@@ -714,7 +714,7 @@ function Doc1Actions({ user, doc, run }) {
         </div>
         <EquipmentCostEditor items={salesEquipment} setItems={setSalesEquipment} locked={!salesOpen} currency={sales.currency || "TZS"} />
         <div className="equipment-total-bar sales-total-bar">
-          <strong>Sales Total</strong>
+          <strong>Total Cost</strong>
           <span>{money(salesTotal, sales.currency)}</span>
         </div>
         {salesOpen && salesMustConfirm && (
@@ -759,7 +759,6 @@ function Doc1Actions({ user, doc, run }) {
 
 function HocApproval({ user, doc, enabled, run }) {
   const [remarks, setRemarks] = useState(doc.hoc?.remarks || "");
-  const engineerEquipment = doc.store?.items || [];
   const salesEquipment = doc.sales?.equipment || [];
   return (
     <form className="panel" onSubmit={(event) => event.preventDefault()}>
@@ -774,8 +773,7 @@ function HocApproval({ user, doc, enabled, run }) {
         <p><strong>Total Sales Cost</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p>
         <p><strong>MRR</strong><br />{money(doc.sales?.mrr, doc.sales?.currency)}</p>
       </div>
-      <ReadOnlyEquipment title="Engineer Equipment" items={engineerEquipment} />
-      <ReadOnlyEquipment title="Sales Equipment and Costs" items={salesEquipment} />
+      <EquipmentCostEditor items={salesEquipment} locked currency={doc.sales?.currency || "TZS"} />
       <label>Approval Comments<textarea disabled={!enabled} value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
       {enabled && <div className="button-row">
         <button className="btn" type="button" onClick={() => run(() => api.hoc(user, doc.id, { decision: "approve", remarks }), "Approved and submitted to Accounts.")}>Approve to Accounts</button>
@@ -839,6 +837,13 @@ function ActionPanel({ title, enabled, initiallyEditing = false, actionLabel, on
 }
 
 function ConfirmationUpload({ value, onChange, owner }) {
+  function useImage(file) {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 5 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange({ name: file.name || 'email-confirmation.png', dataUrl: reader.result });
+    reader.readAsDataURL(file);
+  }
   function selectFile(event) {
     const file = event.target.files?.[0];
     if (!file) return onChange(null);
@@ -848,11 +853,18 @@ function ConfirmationUpload({ value, onChange, owner }) {
       return onChange(null);
     }
     event.target.setCustomValidity("");
-    const reader = new FileReader();
-    reader.onload = () => onChange({ name: file.name, dataUrl: reader.result });
-    reader.readAsDataURL(file);
+    useImage(file);
   }
-  return <div className="confirmation-upload"><label>Client email confirmation screenshot ({owner})<input required accept="image/png,image/jpeg" type="file" onChange={selectFile} /></label>{value?.dataUrl && <img src={value.dataUrl} alt="Client email confirmation preview" />}<small>Required before submission. PNG or JPEG, maximum 5 MB.</small></div>;
+  async function pasteImage() {
+    try {
+      const clipboard = await navigator.clipboard.read();
+      for (const item of clipboard) {
+        const type = item.types.find((entry) => ['image/png', 'image/jpeg'].includes(entry));
+        if (type) return useImage(await item.getType(type));
+      }
+    } catch (_) { /* The normal paste handler remains available where clipboard permission is denied. */ }
+  }
+  return <div className="confirmation-upload" tabIndex="0" onPaste={(event) => { const file = [...(event.clipboardData?.files || [])].find((entry) => entry.type.startsWith('image/')); if (file) { event.preventDefault(); useImage(file); } }}><label>Client email confirmation screenshot ({owner})<input required={!value?.dataUrl} accept="image/png,image/jpeg" capture="environment" type="file" onChange={selectFile} /></label><div className="button-row"><button className="btn secondary" type="button" onClick={pasteImage}>Paste Screenshot</button></div>{value?.dataUrl && <img src={value.dataUrl} alt="Client email confirmation preview" />}<small>Upload, snap with the camera, or paste a screenshot. PNG or JPEG, maximum 5 MB.</small></div>;
 }
 
 function EquipmentCostEditor({ items, setItems, locked = false, currency = "TZS" }) {
@@ -900,8 +912,8 @@ function ReadOnlyEquipment({ title, items, simple = false }) {
   );
 }
 
-function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false, storeMode = false, pricing = null }) {
-  if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} pricing={pricing || { usdToTzsRate: 2500, items: engineerStockItems.map((item) => ({ ...item, unitCostUsd: item.unitCost })) }} />;
+function ItemEditor({ items, setItems, locked = false, requestMode = false, engineerRequest = false, title = "Stock Items", addLabel = "Add Item", costLocked = false, storeMode = false, pricing = null, currency = "TZS" }) {
+  if (engineerRequest) return <EngineerItemEditor items={items} setItems={setItems} currency={currency} pricing={pricing || { usdToTzsRate: 2500, items: engineerStockItems.map((item) => ({ ...item, unitCostUsd: item.unitCost })) }} />;
   function update(index, key, value) {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: key.includes("Qty") || key === "unitCost" ? Number(value) : value } : item));
   }
@@ -958,7 +970,7 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
   );
 }
 
-function EngineerItemEditor({ items, setItems, pricing }) {
+function EngineerItemEditor({ items, setItems, pricing, currency }) {
   const pageSize = 5;
   const [page, setPage] = useState(0);
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -976,9 +988,10 @@ function EngineerItemEditor({ items, setItems, pricing }) {
       itemId: selected?.id || "",
       name: description,
       serialNumber: "",
-      unitCost: selected ? selected.unitCostUsd * Number(pricing.usdToTzsRate) : 0,
+      unitCost: selected ? (currency === "USD" ? selected.unitCostUsd : selected.unitCostUsd * Number(pricing.usdToTzsRate)) : 0,
       unitCostUsd: selected?.unitCostUsd ?? 0,
-      costCurrency: "TZS",
+      costCurrency: currency,
+      purpose: item.purpose || "Sold to Client",
     } : item));
   }
 
@@ -991,7 +1004,7 @@ function EngineerItemEditor({ items, setItems, pricing }) {
       <div className="section-title"><h2>Stock Items</h2></div>
       <div className="table-wrap engineer-items-table">
         <table>
-          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost (TZS)</th><th>Total</th><th>Action</th></tr></thead>
+          <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost ({currency})</th><th>Purpose</th><th>Total</th><th>Action</th></tr></thead>
           <tbody>
             {visibleItems.map((item, visibleIndex) => {
               const itemIndex = startIndex + visibleIndex;
@@ -1016,13 +1029,14 @@ function EngineerItemEditor({ items, setItems, pricing }) {
                   </td>
                   <td><input required min="1" type="number" value={item.requestedQty} onChange={(event) => updateQuantity(itemIndex, event.target.value)} /></td>
                   <td><input aria-label={`Unit cost for ${item.name || `item ${itemIndex + 1}`}`} required min="0" readOnly type="number" value={item.unitCost || ""} /></td>
-                  <td className="money-cell">{money(Number(item.requestedQty || 0) * Number(item.unitCost || 0), "TZS")}</td>
+                  <td><select aria-label={`Purpose for item ${itemIndex + 1}`} required value={item.purpose || "Sold to Client"} onChange={(event) => setItems(items.map((entry, index) => index === itemIndex ? { ...entry, purpose: event.target.value } : entry))}><option value="Sold to Client">Sold to Client</option><option value="Lease">Lease</option></select></td>
+                  <td className="money-cell">{money(Number(item.requestedQty || 0) * Number(item.unitCost || 0), currency)}</td>
                   <td><button type="button" className="btn danger" onClick={() => setItems(items.filter((_, index) => index !== itemIndex))}>Remove</button></td>
                 </tr>
               );
             })}
           </tbody>
-          <tfoot><tr><td colSpan="5"><strong>Equipment Total</strong></td><td className="money-cell"><strong>{money(items.reduce((sum, item) => sum + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0), "TZS")}</strong></td><td /></tr></tfoot>
+          <tfoot><tr><td colSpan="6"><strong>Equipment Total</strong></td><td className="money-cell"><strong>{money(items.reduce((sum, item) => sum + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0), currency)}</strong></td><td /></tr></tfoot>
         </table>
         <div className="engineer-table-footer">
           <button type="button" className="btn secondary engineer-add-button" onClick={() => { setItems([...items, { ...emptyItem }]); setPage(Math.floor(items.length / pageSize)); }}>+ Add Item</button>

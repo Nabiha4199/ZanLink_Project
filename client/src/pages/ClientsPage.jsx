@@ -260,7 +260,7 @@ function normalizeTanzaniaContact(value) {
 export default function ClientsPage({ clients, onRegister }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
-  const [geoDraft, setGeoDraft] = useState({ latitude: "", longitude: "" });
+  const [geoDraft, setGeoDraft] = useState("");
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [contactError, setContactError] = useState("");
@@ -288,7 +288,7 @@ export default function ClientsPage({ clients, onRegister }) {
       return;
     }
     if (geoLocationsToSubmit.length < locationsToSubmit.length) {
-      setLocationError("Add latitude and longitude for every registered client location.");
+      setLocationError("Add one geo location for every registered client location.");
       return;
     }
     setContactError("");
@@ -302,7 +302,7 @@ export default function ClientsPage({ clients, onRegister }) {
     }).then(() => {
       setForm(emptyClient);
       setLocationQuery("");
-      setGeoDraft({ latitude: "", longitude: "" });
+      setGeoDraft("");
     }).catch(() => {});
   }
 
@@ -363,8 +363,7 @@ export default function ClientsPage({ clients, onRegister }) {
 }
 
 function mergeGeoLocation(geoLocations, location, geoDraft) {
-  const latitude = Number(geoDraft.latitude);
-  const longitude = Number(geoDraft.longitude);
+  const [latitude, longitude] = String(geoDraft).split(",").map((value) => Number(value.trim()));
   if (!location || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return geoLocations;
   return [...geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }];
 }
@@ -484,10 +483,11 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
   function addLocation(value, geo = null) {
     const location = value.trim();
     if (!location) return;
-    const latitude = Number(geo?.latitude ?? geoDraft.latitude);
-    const longitude = Number(geo?.longitude ?? geoDraft.longitude);
+    const [draftLatitude, draftLongitude] = String(geoDraft).split(",").map((entry) => entry.trim());
+    const latitude = Number(geo?.latitude ?? draftLatitude);
+    const longitude = Number(geo?.longitude ?? draftLongitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setError("Add latitude and longitude before adding this location.");
+      setError("Enter Geo Location as latitude, longitude before adding this location.");
       return;
     }
     if (!form.locations.some((item) => item.toLowerCase() === location.toLowerCase())) {
@@ -496,7 +496,7 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
     }
     setError("");
     setQuery("");
-    setGeoDraft({ latitude: "", longitude: "" });
+    setGeoDraft("");
     setSuggestions([]);
     setIsOpen(false);
     setStatus("idle");
@@ -573,10 +573,7 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
           </div>
         </div>
       </label>
-      <div className="form-grid two">
-        <label>Latitude<input inputMode="decimal" value={geoDraft.latitude} onChange={(event) => setGeoDraft({ ...geoDraft, latitude: event.target.value })} /></label>
-        <label>Longitude<input inputMode="decimal" value={geoDraft.longitude} onChange={(event) => setGeoDraft({ ...geoDraft, longitude: event.target.value })} /></label>
-      </div>
+      <label>Geo Location<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
       {error && <small className="field-error">{error}</small>}
       {!!form.locations.length && (
         <div className="location-chips">

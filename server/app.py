@@ -404,7 +404,7 @@ def find_user(user_id: str | None) -> dict | None:
 
 def user_has_role(user: dict, selected_role: str) -> bool:
     allowed_roles = {user["role"], user.get("department", "")}
-    if user["role"] == "System Admin":
+    if user["role"] in {"System Admin", "Management"}:
         allowed_roles.update({"Management", "System Admin"})
     return selected_role in allowed_roles
 
@@ -519,14 +519,14 @@ def current_user() -> dict:
 
 
 def require_department(user: dict, *departments: str) -> None:
-    allowed = user["role"] == "System Admin" or user["department"] in departments or user["role"] in departments
+    allowed = user["role"] in {"System Admin", "Management"} or user["department"] in departments or user["role"] in departments
     if not allowed:
         raise PermissionError("This action is not allowed for your department")
 
 
 def require_system_admin(user: dict) -> None:
-    if user["role"] != "System Admin":
-        raise PermissionError("System Admin access is required")
+    if user["role"] not in {"System Admin", "Management"}:
+        raise PermissionError("Management or System Admin access is required")
 
 
 def set_route(doc: dict, status: str, department: str) -> None:
@@ -732,6 +732,38 @@ def build_request_report(docs: list[dict], days: int) -> dict:
     }
 
 
+def build_material_issued_report(docs: list[dict], days: int) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = []
+    for doc in docs:
+        if parse_iso(doc.get("createdAt")) < cutoff:
+            continue
+        for item in doc.get("store", {}).get("items", []):
+            issued_qty = float(item.get("issuedQty") or 0)
+            if issued_qty <= 0:
+                continue
+            rows.append({
+                "id": f"{doc['id']}-{item.get('itemId')}-{len(rows)}",
+                "number": doc["number"], "clientName": doc["clientName"], "location": doc.get("location", ""),
+                "itemId": item.get("itemId") or item.get("serialNumber") or "-", "name": item.get("name") or "-",
+                "purpose": item.get("purpose") or "-", "issuedQty": issued_qty,
+                "issuedAt": history_action_at(doc, "Store completed the workflow") or doc.get("createdAt"),
+            })
+    rows.sort(key=lambda row: parse_iso(row["issuedAt"]), reverse=True)
+    return {"days": days, "materials": rows, "totalMaterials": len(rows), "totalIssued": sum(row["issuedQty"] for row in rows)}
+
+
+def filter_report_dates(docs: list[dict], start: str | None, end: str | None) -> list[dict]:
+    if not start and not end:
+        return docs
+    try:
+        start_at = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else datetime.min.replace(tzinfo=timezone.utc)
+        end_at = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1) if end else datetime.max.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError("Use valid start and end dates")
+    return [doc for doc in docs if start_at <= parse_iso(doc.get("createdAt")) < end_at]
+
+
 def ensure_document_access(user: dict, doc: dict) -> None:
     return
 
@@ -847,6 +879,17 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     draw_label_value(pdf, "Prepared By", engineer_name, 85 * mm, y - 4, 52 * mm)
     draw_label_value(pdf, "Engineer Notes", doc.get("engineer", {}).get("notes", ""), 143 * mm, y - 4, 45 * mm)
 
+    if doc.get("hoc", {}).get("reviewedBy"):
+        y -= 34 * mm
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawCentredString(width / 2, y + 12, "Head of Commercial Approval")
+        hoc = doc["hoc"]
+        hoc_name = hoc.get("reviewedByName") or user_display_name(hoc.get("reviewedBy"), "-")
+        decision = str(hoc.get("decision") or "-").capitalize()
+        draw_label_value(pdf, "Reviewed By", hoc_name, 22 * mm, y - 4, 56 * mm)
+        draw_label_value(pdf, "Decision", decision, 85 * mm, y - 4, 52 * mm)
+        draw_label_value(pdf, "Comments", hoc.get("remarks") or "-", 143 * mm, y - 4, 45 * mm)
+
     y -= 34 * mm
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawCentredString(width / 2, y + 12, "Management Approval")
@@ -874,7 +917,6 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
 
     pdf.setFont("Helvetica-Oblique", 8)
     pdf.drawString(22 * mm, 22 * mm, "Internal All Employees")
-    draw_confirmation_page(pdf, doc)
     pdf.showPage()
     pdf.save()
     return buffer
@@ -970,11 +1012,14 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
             ("Approved by", doc.get("management", {}).get("approvedByName", "Not recorded"), doc.get("management", {}).get("approvedByRole", "Management"), doc.get("management", {}).get("approvedAt")),
         ]
     y -= 42 * mm
+    signature_table_rows = []
     for label, name, position, acted_at in signature_rows:
         acted_date = parse_iso(acted_at).strftime("%d/%m/%Y") if acted_at else "Not recorded"
-        pdf.setFont("Helvetica", 7.5)
-        pdf.drawString(22 * mm, y, f"{label}:   Name: {name}   |   Position: {position}   |   Date: {acted_date}")
-        y -= 10 * mm
+        signature_table_rows.append([label, f"Name: {name}", f"Position: {position}", f"Date: {acted_date}"])
+    signature_table = Table(signature_table_rows, colWidths=[30 * mm, 58 * mm, 40 * mm, 38 * mm])
+    signature_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#6b7280")), ("FONTSIZE", (0, 0), (-1, -1), 7.5), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold")]))
+    signature_table.wrapOn(pdf, width, height)
+    signature_table.drawOn(pdf, 22 * mm, y - len(signature_table_rows) * 7 * mm)
 
     pdf.showPage()
     pdf.save()
@@ -1563,15 +1608,20 @@ def create_doc1():
     if service_type not in {"new_installation", "reconnection", "wifi_extension", "shifting_connection", "general_maintenance"}:
         raise ValueError("Please select a valid onboarding type")
     client, location, contact, geo_location = registered_client_details(payload)
+    currency = str(payload.get("currency") or "TZS").upper()
+    if currency not in {"TZS", "USD"}:
+        raise ValueError("Display currency must be TZS or USD")
     items = validate_items(payload.get("items", []), context="Stock item")
     for item in items:
         catalog_item = next((entry for entry in STATE["pricing"]["items"] if entry["id"] == item["itemId"]), None)
         if not catalog_item or catalog_item["description"] != item["name"]:
             raise ValueError("Select an item from the approved equipment list")
         item["unitCostUsd"] = catalog_item["unitCostUsd"]
-        item["unitCost"] = catalog_item["unitCostUsd"] * STATE["pricing"]["usdToTzsRate"]
-        item["costCurrency"] = "TZS"
-    owner = confirmation_owner(items, "TZS")
+        item["unitCost"] = catalog_item["unitCostUsd"] if currency == "USD" else catalog_item["unitCostUsd"] * STATE["pricing"]["usdToTzsRate"]
+        item["costCurrency"] = currency
+        if item["purpose"] not in {"Sold to Client", "Lease"}:
+            raise ValueError("Stock item purpose must be Sold to Client or Lease")
+    owner = confirmation_owner(items, currency)
     confirmation = require_confirmation_image(payload) if owner == "Engineer" else None
     if confirmation:
         confirmation.update({"uploadedBy": user["id"], "uploadedByName": user["name"], "uploadedAt": now_iso()})
@@ -1593,7 +1643,7 @@ def create_doc1():
         "createdByName": user["name"],
         "createdByRole": user["role"],
         "createdAt": now_iso(),
-        "engineer": {"notes": optional_text(payload, "engineerNotes"), "submittedBy": user["id"], "submittedByName": user["name"]},
+        "engineer": {"notes": optional_text(payload, "engineerNotes"), "currency": currency, "submittedBy": user["id"], "submittedByName": user["name"]},
         "sales": {},
         "accounts": {},
         "store": {"confirmed": False, "amountMatches": None, "remarks": "", "items": items},
@@ -1963,6 +2013,7 @@ def download_maintenance_certificate(document_id: str):
 def reports():
     user = current_user()
     docs = deepcopy(visible_documents_for(user))
+    custom_docs = filter_report_dates(docs, request.args.get("start"), request.args.get("end"))
     status_counts = {}
     for doc in docs:
         status_counts[doc["status"]] = status_counts.get(doc["status"], 0) + 1
@@ -1976,6 +2027,13 @@ def reports():
                 "day": build_request_report(docs, 1),
                 "week": build_request_report(docs, 7),
                 "month": build_request_report(docs, 30),
+                "custom": build_request_report(custom_docs, 365000),
+            },
+            "materialPeriods": {
+                "day": build_material_issued_report(docs, 1),
+                "week": build_material_issued_report(docs, 7),
+                "month": build_material_issued_report(docs, 30),
+                "custom": build_material_issued_report(custom_docs, 365000),
             },
         }
     )

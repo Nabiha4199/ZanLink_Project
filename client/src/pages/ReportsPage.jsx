@@ -1,120 +1,28 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { api } from "../services/api";
 import { formatDate } from "../utils/formatters";
 import { statusClass } from "../utils/permissions";
 
-const PERIODS = [
-  ["day", "1 Day"],
-  ["week", "1 Week"],
-  ["month", "1 Month"],
-];
+const periods = [["day", "1 Day"], ["week", "1 Week"], ["month", "1 Month"], ["custom", "Custom"]];
+const metrics = [["all", "Requests", "totalRequests"], ["approved", "Approved", "approvedRequests"], ["pending", "Pending", "pendingRequests"], ["successful", "Successful", "successfulRequests"]];
 
-const METRICS = [
-  ["all", "Request", "totalRequests"],
-  ["approved", "Approved Requests", "approvedRequests"],
-  ["pending", "Pending Requests", "pendingRequests"],
-  ["successful", "Successful Requests", "successfulRequests"],
-];
-
-export default function ReportsPage({ reports }) {
-  const [periodKey, setPeriodKey] = useState("week");
-  const [detailKey, setDetailKey] = useState("all");
-  const period = reports?.periods?.[periodKey];
-  const rows = useMemo(() => {
-    const requests = period?.requests || [];
-    if (detailKey === "all") return requests;
-    return requests.filter((request) => request[detailKey]);
-  }, [period, detailKey]);
-
+export default function ReportsPage({ reports, user }) {
+  const [type, setType] = useState("requests"); const [periodKey, setPeriodKey] = useState("week"); const [detail, setDetail] = useState("all");
+  const [start, setStart] = useState(""); const [end, setEnd] = useState(""); const [custom, setCustom] = useState(null);
+  useEffect(() => { if (periodKey === "custom" && start && end) api.reports(user, { start, end }).then(setCustom).catch(() => setCustom(null)); }, [user, periodKey, start, end]);
+  const data = periodKey === "custom" ? custom : reports;
+  const period = type === "requests" ? data?.periods?.[periodKey] : data?.materialPeriods?.[periodKey];
+  const rows = useMemo(() => { const source = type === "requests" ? period?.requests || [] : period?.materials || []; return type === "requests" && detail !== "all" ? source.filter((row) => row[detail]) : source; }, [type, period, detail]);
   if (!reports) return <div className="panel empty">Loading reports...</div>;
-
-  return (
-    <>
-      <div className="topbar">
-        <div className="page-title">
-          <h1>Reports</h1>
-          <p>Request totals and drill-down lists for daily, weekly, and monthly review.</p>
-        </div>
-      </div>
-
-      <div className="report-tabs" role="tablist" aria-label="Report period">
-        {PERIODS.map(([key, label]) => (
-          <button
-            className={periodKey === key ? "active" : ""}
-            key={key}
-            type="button"
-            onClick={() => {
-              setPeriodKey(key);
-              setDetailKey("all");
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <section className="stats report-stats report-metrics" aria-label="Report request filters">
-        {METRICS.map(([key, label, valueKey]) => (
-          <button
-            className={detailKey === key ? "stat active" : "stat"}
-            aria-pressed={detailKey === key}
-            key={key}
-            type="button"
-            onClick={() => setDetailKey(key)}
-          >
-            <span>{label}</span>
-            <b>{period?.[valueKey] || 0}</b>
-          </button>
-        ))}
-      </section>
-
-      <section className="panel">
-        <div className="section-title">
-          <h2>{METRICS.find(([key]) => key === detailKey)?.[1]} / {PERIODS.find(([key]) => key === periodKey)?.[1]}</h2>
-          <span>{rows.length} request{rows.length === 1 ? "" : "s"}</span>
-        </div>
-        <ReportTable rows={rows} mode={detailKey} />
-      </section>
-    </>
-  );
+  return <>
+    <div className="topbar"><div className="page-title"><h1>Reports</h1><p>Workflow requests and materials issued by stock.</p></div></div>
+    <div className="report-tabs"><button className={type === "requests" ? "active" : ""} type="button" onClick={() => setType("requests")}>Request Report</button><button className={type === "materials" ? "active" : ""} type="button" onClick={() => setType("materials")}>Materials Issued by Stock</button></div>
+    <div className="report-tabs">{periods.map(([key, label]) => <button className={periodKey === key ? "active" : ""} key={key} type="button" onClick={() => { setPeriodKey(key); setDetail("all"); }}>{label}</button>)}</div>
+    {periodKey === "custom" && <section className="panel form-grid two"><label>From<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label><label>To<input type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)} /></label>{(!start || !end) && <small className="field-help">Choose both dates to load the custom timeline.</small>}</section>}
+    {type === "requests" ? <section className="stats report-stats report-metrics">{metrics.map(([key, label, value]) => <button className={detail === key ? "stat active" : "stat"} key={key} type="button" onClick={() => setDetail(key)}><span>{label}</span><b>{period?.[value] || 0}</b></button>)}</section> : <section className="stats report-stats report-metrics"><div className="stat"><span>Material Lines</span><b>{period?.totalMaterials || 0}</b></div><div className="stat"><span>Total Quantity Issued</span><b>{period?.totalIssued || 0}</b></div></section>}
+    <section className="panel"><div className="section-title"><h2>{type === "requests" ? metrics.find(([key]) => key === detail)?.[1] : "Materials Issued"} / {periods.find(([key]) => key === periodKey)?.[1]}</h2><span>{rows.length} record{rows.length === 1 ? "" : "s"}</span></div>{type === "requests" ? <RequestTable rows={rows} mode={detail} /> : <MaterialTable rows={rows} />}</section>
+  </>;
 }
-
-function ReportTable({ rows, mode }) {
-  if (!rows.length) return <div className="empty">No requests match this report view.</div>;
-  return (
-    <div className="table-wrap reports-table-wrap">
-      <table className="reports-table">
-        <thead>
-          <tr>
-            <th>Number</th>
-            <th>Type</th>
-            <th>Client</th>
-            <th>Status</th>
-            <th>Department</th>
-            <th>Created</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((request) => (
-            <tr key={request.id}>
-              <td data-label="Number"><strong>{request.number}</strong></td>
-              <td data-label="Type">{request.type === "doc1" ? "Onboarding & Stock" : "General Maintenance"}</td>
-              <td data-label="Client">{request.clientName}<br /><small>{request.location}</small></td>
-              <td data-label="Status"><span className={`status ${statusClass(request.status)}`}>{request.status}</span></td>
-              <td data-label="Department">{request.currentDepartment}</td>
-              <td data-label="Created">{formatDate(request.createdAt)}</td>
-              <td data-label="Reason">{requestReason(request, mode)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function requestReason(request, mode) {
-  if (mode === "pending" || request.pending) return request.pendingReason || "-";
-  if (mode === "successful" || request.successful) return "Workflow completed successfully.";
-  if (mode === "approved" || request.approved) return request.successful ? "Final approval completed." : "Approved and waiting for the next workflow step.";
-  return request.rejectionReason || request.pendingReason || "-";
-}
+function RequestTable({ rows, mode }) { if (!rows.length) return <div className="empty">No requests match this report view.</div>; return <div className="table-wrap reports-table-wrap"><table className="reports-table"><thead><tr><th>Number</th><th>Type</th><th>Client</th><th>Status</th><th>Department</th><th>Created</th><th>Reason</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{row.number}</strong></td><td>{row.type === "doc1" ? "Onboarding & Stock" : "General Maintenance"}</td><td>{row.clientName}<br /><small>{row.location}</small></td><td><span className={`status ${statusClass(row.status)}`}>{row.status}</span></td><td>{row.currentDepartment}</td><td>{formatDate(row.createdAt)}</td><td>{reason(row, mode)}</td></tr>)}</tbody></table></div>; }
+function MaterialTable({ rows }) { if (!rows.length) return <div className="empty">No materials have been issued in this period.</div>; return <div className="table-wrap reports-table-wrap"><table className="reports-table"><thead><tr><th>Requisition</th><th>Client</th><th>Item ID</th><th>Material</th><th>Purpose</th><th>Issued Qty</th><th>Issued</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{row.number}</strong></td><td>{row.clientName}<br /><small>{row.location}</small></td><td>{row.itemId}</td><td>{row.name}</td><td>{row.purpose}</td><td>{row.issuedQty}</td><td>{formatDate(row.issuedAt)}</td></tr>)}</tbody></table></div>; }
+function reason(row, mode) { if (mode === "pending" || row.pending) return row.pendingReason || "-"; if (mode === "successful" || row.successful) return "Workflow completed successfully."; if (mode === "approved" || row.approved) return row.successful ? "Final approval completed." : "Approved and waiting for the next workflow step."; return row.rejectionReason || row.pendingReason || "-"; }

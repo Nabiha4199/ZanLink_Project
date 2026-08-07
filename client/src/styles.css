@@ -174,17 +174,18 @@
 }
 
 .workflow-stages {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  align-items: start;
   min-width: 0;
-  overflow-x: auto;
-  padding: 2px 0 8px;
+  overflow: visible;
+  padding: 2px 0;
 }
 
 .workflow-step {
   position: relative;
   display: grid;
-  flex: 1 0 142px;
+  min-width: 0;
   justify-items: center;
   gap: 5px;
   text-align: center;
@@ -390,7 +391,7 @@
 .workflow-modal {
   width: min(760px, 100%);
   max-height: calc(100vh - 36px);
-  overflow: auto;
+  overflow: hidden;
   padding: 22px;
   border-radius: 12px;
   background: white;
@@ -1211,17 +1212,18 @@
 }
 
 .signature-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
   align-items: baseline;
-  gap: 14px;
+  gap: 10px;
   padding: 0;
   border: 0;
-  white-space: nowrap;
+  white-space: normal;
   font-size: 11px;
 }
 
 .signature-row > strong {
-  min-width: 105px;
+  min-width: 0;
 }
 
 .signature-row span,
@@ -1481,6 +1483,30 @@
 }
 
 @media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .onboarding-form {
+    min-height: 0;
+  }
+
+  .onboarding-form h3 {
+    margin-top: 5px;
+    padding: 3px;
+    font-size: 12px;
+  }
+
+  .onboarding-form .paper-field {
+    min-height: 34px;
+    padding: 4px;
+  }
+
+  .onboarding-form .paper-field span,
+  .onboarding-form .paper-field strong {
+    font-size: 10px;
+  }
+
   .printed-confirmation {
     break-before: page;
     page-break-before: always;

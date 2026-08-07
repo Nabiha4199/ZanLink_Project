@@ -1,9 +1,9 @@
 export function canCreate(user) {
-  return user.role === "Engineer" || user.role === "System Admin";
+  return user.role === "Engineer" || ["System Admin", "Management"].includes(user.role);
 }
 
 export function canAct(user, department) {
-  return user.role === "System Admin" || user.department === department || user.role === department;
+  return ["System Admin", "Management"].includes(user.role) || user.department === department || user.role === department;
 }
 
 export function statusClass(status) {
