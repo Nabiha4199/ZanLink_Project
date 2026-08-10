@@ -51,14 +51,14 @@ USD_TO_TZS_RATE = float(os.getenv("USD_TO_TZS_RATE", "2500"))
 CLIENT_CONFIRMATION_USD_LIMIT = 400
 MAX_CONFIRMATION_IMAGE_BYTES = 5 * 1024 * 1024
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
-ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "iitmz.ac.in").strip().lower()
+ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "liquidtelecom.co.tz").strip().lower()
 ALLOWED_EMAIL_DOMAINS = sorted(
     {
         domain.strip().lower()
         for domain in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",")
         if domain.strip()
     }
-    | {ALLOWED_EMAIL_DOMAIN, "iitmz.ac.in"}
+    | {ALLOWED_EMAIL_DOMAIN, "liquidtelecom.co.tz", "liquidtech.co.tz"}
 )
 PASSWORD_RESET_TOKENS = {}
 MICROSOFT_LOGIN_CODES = {}
@@ -93,19 +93,22 @@ DELIVERY_NOTE_TERMS = """If any of the devices above is provided on test basis, 
 
 
 USERS = [
-
-    {"id": "u3", "name": "Accounts Team", "username": "accounts", "email": "accounts@iitmz.ac.in", "password": "demo1234", "role": "Accounts", "department": "Accounts"},
-    {"id": "u4", "name": "System Admin", "username": "admin", "email": "admin@iitmz.ac.in", "password": "demo1234", "role": "System Admin", "department": "Management"},
-    {"id": "u8", "name": "Abdallah", "username": "abdallah", "email": "zda23b014@iitmz.ac.in", "role": "System Admin", "department": "Management"},
-    {"id": "u9", "name": "Incredible Dula", "username": "incredibledula90", "email": "incredibledula90@gmail.com", "role": "System Admin", "department": "Management"},
-
+    {"id": "u1", "name": "Peter Kalezi", "username": "peter", "email": "peter@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
+    {"id": "u2", "name": "Rashad Abdulkadir", "username": "rashad", "email": "rashad@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
+    {"id": "u3", "name": "Nicolaus Libori", "username": "nicolaus.libori", "email": "nicolaus.libori@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
+    {"id": "u4", "name": "Fahmin Ali", "username": "fahmin", "email": "fahmin@liquidtech.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u5", "name": "Yona Ngeleja", "username": "yona", "email": "yona@liquidtech.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u6", "name": "Juma Mganga", "username": "juma", "email": "juma@liquidtelecom.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u7", "name": "Fides Kavishe", "username": "fides", "email": "fides@liquidtelecom.co.tz", "password": "demo1234", "role": "System Admin", "department": "Management"},
+    {"id": "u8", "name": "Fayza Ali", "username": "fayza", "email": "fayza@liquidtelecom.co.tz", "password": "demo1234", "role": "System Admin", "department": "Management"},
+    {"id": "u9", "name": "Zanlink Management", "username": "md-zanlink", "email": "md-zanlink@liquidtelecom.co.tz", "password": "demo1234", "role": "Management", "department": "Management"},
 ]
 
 LEGACY_USER_NAMES = {
-    "u1": "Engineer",
-    "u2": "Sales",
-    "u3": "Accounts Team",
-    "u4": "System Admin",
+    "u1": "Peter Kalezi",
+    "u2": "Rashad Abdulkadir",
+    "u3": "Nicolaus Libori",
+    "u4": "Fahmin Ali",
 }
 
 REGISTERABLE_ROLES = {
