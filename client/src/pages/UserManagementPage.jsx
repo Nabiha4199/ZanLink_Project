@@ -69,7 +69,7 @@ export default function UserManagementPage({ currentUser, users, onCreateUser, o
                       <select
                         aria-label={`Role for ${account.email}`}
                         disabled={isCurrentUser || pending === account.id}
-                        value={account.role === "Head of Department" ? "HOD" : account.role}
+                        value={account.role === "Head of Department" ? "HOD" : account.role === "Head of Commercial" ? "HOC" : account.role}
                         onChange={(event) => updateUser(account.id, { role: event.target.value })}
                       >
                         {account.pendingApproval && account.role === "Pending Approval" && <option value="Pending Approval" disabled>Select a role</option>}

@@ -96,7 +96,7 @@ USERS = [
     {"id": "u1", "name": "Peter Kalezi", "username": "peter", "email": "peter@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
     {"id": "u2", "name": "Rashad Abdulkadir", "username": "rashad", "email": "rashad@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
     {"id": "u3", "name": "Nicolaus Libori", "username": "nicolaus.libori", "email": "nicolaus.libori@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
-    {"id": "u4", "name": "Fahmin Ali", "username": "fahmin", "email": "fahmin@liquidtech.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
+    {"id": "u4", "name": "Fahmin Ali", "username": "fahmin", "email": "fahmin@liquidtech.co.tz", "password": "demo1234", "role": "Head of Commercial", "department": "HOC"},
     {"id": "u5", "name": "Yona Ngeleja", "username": "yona", "email": "yona@liquidtech.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
     {"id": "u6", "name": "Juma Mganga", "username": "juma", "email": "juma@liquidtelecom.co.tz", "password": "demo1234", "role": "Head of Department", "department": "HOD"},
     {"id": "u7", "name": "Fides Kavishe", "username": "fides", "email": "fides@liquidtelecom.co.tz", "password": "demo1234", "role": "System Admin", "department": "Management"},
