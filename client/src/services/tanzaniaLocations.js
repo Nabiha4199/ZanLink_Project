@@ -48,6 +48,8 @@ const zanzibarAdministrativeLocations = [
   ["Pongwe", "Kaskazini B Town Council, Kaskazini Unguja"],
   ["Mangapwani", "Kaskazini B Town Council, Kaskazini Unguja"],
   ["Koani", "Kati Town Council, Kusini Unguja"],
+  ["Jumbi", "Kati Town Council, Kusini Unguja"],
+  ["Jumbi Primary School", "Kati Town Council, Kusini Unguja"],
   ["Jozani", "Kati Town Council, Kusini Unguja"],
   ["Bwejuu", "Kati Town Council, Kusini Unguja"],
   ["Paje", "Kusini District Council, Kusini Unguja"],
@@ -156,13 +158,16 @@ function waitForRequestSlot(signal) {
   });
 }
 
+function matchesLocationQuery(place, query) {
+  const searchableText = `${place.name || ""} ${place.label || ""}`.toLowerCase();
+  return query.split(/\s+/).filter(Boolean).every((word) => searchableText.includes(word));
+}
+
 export async function searchTanzaniaLocations(query, signal) {
   const normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.length < 2) return [];
+  if (!normalizedQuery) return [];
 
-  const administrativeMatches = zanzibarAdministrativeLocations.filter((place) =>
-    `${place.name} ${place.label}`.toLowerCase().includes(normalizedQuery)
-  );
+  const administrativeMatches = zanzibarAdministrativeLocations.filter((place) => matchesLocationQuery(place, normalizedQuery));
   const cache = readCache();
   if (cache[normalizedQuery]) {
     return [...administrativeMatches, ...cache[normalizedQuery]]

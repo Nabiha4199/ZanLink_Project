@@ -1300,7 +1300,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
 
   useEffect(() => {
     const query = value.trim();
-    if (disabled || query.length < 2) {
+    if (disabled || !query) {
       setSuggestions([]);
       setStatus("idle");
       setActiveIndex(-1);
@@ -1353,7 +1353,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
       <input
         aria-autocomplete="list"
         aria-controls={listboxId}
-        aria-expanded={!disabled && isOpen && value.trim().length >= 2}
+        aria-expanded={!disabled && isOpen && !!value.trim()}
         aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
         autoComplete="off"
         disabled={disabled}
@@ -1362,7 +1362,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
         placeholder="Search any address or place in Zanzibar"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onFocus={() => !disabled && value.trim().length >= 2 && setIsOpen(true)}
+        onFocus={() => !disabled && value.trim() && setIsOpen(true)}
         onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" && suggestions.length) {
@@ -1384,7 +1384,7 @@ function TanzaniaLocationField({ value, onChange, disabled = false }) {
       {!disabled && !!value && (
         <button className="location-clear" aria-label="Clear location search" type="button" onClick={() => onChange("")}>×</button>
       )}
-      {!disabled && isOpen && value.trim().length >= 2 && (
+      {!disabled && isOpen && !!value.trim() && (
         <div className="location-suggestions" id={listboxId} role="listbox">
           {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Zanzibar…</div>}
           {status === "empty" && <div className="location-message">No matching place found. You can still use the address you typed.</div>}

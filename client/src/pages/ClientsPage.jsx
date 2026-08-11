@@ -420,7 +420,7 @@ function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
 
   useEffect(() => {
     const trimmedQuery = query.trim();
-    if (trimmedQuery.length < 2) {
+    if (!trimmedQuery) {
       setSuggestions([]);
       setStatus("idle");
       setActiveIndex(-1);
@@ -479,14 +479,14 @@ function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
             <input
               aria-autocomplete="list"
               aria-controls={listboxId}
-              aria-expanded={isOpen && query.trim().length >= 2}
+              aria-expanded={isOpen && !!query.trim()}
               aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
               autoComplete="off"
               role="combobox"
               placeholder="Search any address or place in Zanzibar"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              onFocus={() => query.trim().length >= 2 && setIsOpen(true)}
+              onFocus={() => query.trim() && setIsOpen(true)}
               onBlur={() => window.setTimeout(() => setIsOpen(false), 150)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" && suggestions.length) {
@@ -509,7 +509,7 @@ function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
             {!!query && (
               <button className="location-clear" aria-label="Clear location search" type="button" onClick={() => setQuery("")}>×</button>
             )}
-            {isOpen && query.trim().length >= 2 && (
+            {isOpen && !!query.trim() && (
               <div className="location-suggestions" id={listboxId} role="listbox">
                 {status === "loading" && <div className="location-message"><span className="location-spinner" />Searching across Zanzibar…</div>}
                 {status === "empty" && <div className="location-message">No matching place found. You can still add the address you typed.</div>}
@@ -545,10 +545,12 @@ function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
       {!!form.locations.length && (
         <div className="location-chips">
           {form.locations.map((location) => (
-            <span key={location}>{location}<button aria-label={`Remove ${location}`} type="button" onClick={() => setForm({ ...form, locations: form.locations.filter((item) => item !== location) })}>×</button></span>
+            <span key={location}><span className="location-chip-name">{location}</span><button aria-label={`Remove ${location}`} type="button" onClick={() => setForm({ ...form, locations: form.locations.filter((item) => item !== location) })}>×</button></span>
           ))}
         </div>
       )}
+      <label>Geo Location (optional)<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
+      {error && <small className="field-error">{error}</small>}
     </div>
   );
 }
