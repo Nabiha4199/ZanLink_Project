@@ -1391,21 +1391,6 @@ def create_client():
         raise ValueError("Add at least one client location")
     if any(len(location) > 180 for location in cleaned_locations):
         raise ValueError("Each location must be 180 characters or fewer")
-    geo_locations = []
-    for item in payload.get("geoLocations") or []:
-        if not isinstance(item, dict):
-            continue
-        location = str(item.get("location") or "").strip()
-        if location not in cleaned_locations:
-            continue
-        try:
-            latitude = float(item.get("latitude"))
-            longitude = float(item.get("longitude"))
-        except (TypeError, ValueError):
-            raise ValueError("Geo location coordinates are invalid")
-        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-            raise ValueError("Geo location coordinates are invalid")
-        geo_locations.append({"location": location, "latitude": latitude, "longitude": longitude})
     email = normalize_email(payload.get("email"))
     if any(client.get("email", "").lower() == email for client in STATE["clients"]):
         raise ValueError("A client with this email is already registered")
@@ -1415,7 +1400,7 @@ def create_client():
         "contact": normalize_tanzania_contact(payload.get("contact")),
         "email": email,
         "locations": cleaned_locations,
-        "geoLocations": geo_locations,
+        "geoLocations": [],
         "createdAt": now_iso(),
     }
     STATE["clients"].insert(0, client)

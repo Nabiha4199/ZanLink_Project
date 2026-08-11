@@ -261,7 +261,7 @@ function PasswordSetupCard({ onSubmit }) {
 }
 
 function Doc1Form({ clients, pricing, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", currency: "TZS", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", serviceType: "new_installation", engineerNotes: "", currency: "TZS", items: [{ ...emptyItem }] });
   const equipmentTotal = form.items.reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
   const engineerMustConfirm = equipmentTotal < (form.currency === "USD" ? 400 : 1000000);
   return (
@@ -300,7 +300,7 @@ function Doc1Form({ clients, pricing, onSubmit, onCancel }) {
 }
 
 function MaintenanceForm({ clients, pricing, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", geoLocation: null, service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
+  const [form, setForm] = useState({ clientId: "", clientName: "", countryIso: "TZ", contact: "", email: "", location: "", service: "", otherService: "", fault: "", action: "", items: [{ ...emptyItem }] });
   return (
     <FormShell title="New General Maintenance" subtitle="General Maintenance starts from Engineer, goes to HOD, then Accounts." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to HOD">
       <div className="form-grid">
@@ -362,15 +362,18 @@ function printElementsByIds(printIds) {
 
 function DocumentDetail({ user, doc, onBack, run }) {
   const managementReview = false;
-  const engineerCompleted = doc.type === "doc1" && (doc.status === "Completed" || (doc.workflowCompletedAt && user.role === "Engineer")) && (user.role === "Engineer" || user.role === "System Admin");
-  const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed" && (user.role === "Engineer" || user.role === "System Admin");
+  const doc1PendingManagement = doc.type === "doc1" && doc.status === "Pending Management";
+  const doc1Completed = doc.type === "doc1" && doc.status === "Completed";
+  const maintenanceCompleted = doc.type === "maintenance" && doc.status === "Completed";
   return (
     <>
       <div className="topbar"><div className="page-title"><h1>{doc.number}</h1><p>{doc.clientName} / {doc.service}</p></div><button className="btn secondary" onClick={onBack}>Back</button></div>
-      {doc.type === "doc1" && !engineerCompleted && <SalesCostSummary doc={doc} />}
+      {doc.type === "doc1" && !doc1Completed && !doc1PendingManagement && <SalesCostSummary doc={doc} />}
       {managementReview ? (
         <ManagementReview user={user} doc={doc} run={run} />
-      ) : engineerCompleted ? (
+      ) : doc1PendingManagement ? (
+        <PendingManagementDocuments user={user} doc={doc} run={run} />
+      ) : doc1Completed ? (
         <CompletedEngineerDocuments user={user} doc={doc} />
       ) : maintenanceCompleted ? (
         <MaintenanceCertificate user={user} doc={doc} />
@@ -382,6 +385,38 @@ function DocumentDetail({ user, doc, onBack, run }) {
         </>
       )}
     </>
+  );
+}
+
+function PendingManagementDocuments({ user, doc, run }) {
+  const onboardingPrintId = `pending-onboarding-print-${doc.id}`;
+  const stockPrintId = `pending-stock-print-${doc.id}`;
+  const [remarks, setRemarks] = useState(doc.management?.remarks || "");
+  const canApprove = canAct(user, "Management");
+  return (
+    <section className="final-documents">
+      <div className="panel final-toolbar">
+        <div>
+          <h2>Management Review Forms</h2>
+          <p>{doc.clientName} is pending management approval. The onboarding and stock requisition forms are ready to view.</p>
+          <span className={`status ${statusClass(doc.status)}`}>{doc.status}</span>
+        </div>
+        <div className="button-row">
+          <button className="btn secondary" onClick={() => printElementById(onboardingPrintId)}>Print Onboarding Doc</button>
+          <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Doc</button>
+          <button className="btn" onClick={() => printElementsByIds([onboardingPrintId, stockPrintId])}>Print All</button>
+        </div>
+      </div>
+      <div className="document-preview-grid">
+        <OnboardingPreview doc={doc} printId={onboardingPrintId} />
+        <StockRequisitionPreview doc={doc} printId={stockPrintId} />
+      </div>
+      {canApprove && (
+        <ActionPanel title="Management Approval" enabled initiallyEditing actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks }), "Document completed.")}>
+          <label>Approval Notes<textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
+        </ActionPanel>
+      )}
+    </section>
   );
 }
 
@@ -1178,13 +1213,11 @@ function ClientFields({ clients, form, setForm }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const contactParts = splitContactNumber(form.contact, form.countryIso);
-  const selectedGeoLocation = form.geoLocation || findClientGeoLocation(selectedClient, form.location);
 
   function selectClient(clientId) {
     const client = clients.find((item) => item.id === clientId);
     const clientContact = splitContactNumber(client?.contact || "", "TZ");
-    const firstGeoLocation = client?.geoLocations?.[0] || null;
-    const location = client?.locations?.[0] || firstGeoLocation?.location || "";
+    const location = client?.locations?.[0] || "";
     setForm({
       ...form,
       clientId,
@@ -1193,7 +1226,6 @@ function ClientFields({ clients, form, setForm }) {
       contact: client?.contact || "",
       email: client?.email || "",
       location,
-      geoLocation: findClientGeoLocation(client, location) || firstGeoLocation,
     });
   }
 
@@ -1201,7 +1233,6 @@ function ClientFields({ clients, form, setForm }) {
     setForm({
       ...form,
       location,
-      geoLocation: findClientGeoLocation(selectedClient, location),
     });
   }
 
@@ -1228,7 +1259,6 @@ function ClientFields({ clients, form, setForm }) {
           />
         )}
       </label>
-      <label>Geo Location<input readOnly value={formatGeoLocation(selectedGeoLocation)} /></label>
       <label>Contact
         <div className="phone-input-wrap">
           <CountryCodePicker
@@ -1257,16 +1287,6 @@ function ClientFields({ clients, form, setForm }) {
       <label>Email<input readOnly value={form.email} /></label>
     </>
   );
-}
-
-function findClientGeoLocation(client, location) {
-  if (!client || !location) return null;
-  return (client.geoLocations || []).find((item) => item.location === location) || null;
-}
-
-function formatGeoLocation(geoLocation) {
-  if (!geoLocation) return "";
-  return `${Number(geoLocation.latitude).toFixed(5)}, ${Number(geoLocation.longitude).toFixed(5)}`;
 }
 
 function TanzaniaLocationField({ value, onChange, disabled = false }) {

@@ -246,7 +246,7 @@ export const countryCodes = [
   ["ZW", "Zimbabwe", "+263"],
 ];
 
-const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [], geoLocations: [] };
+const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [] };
 
 function normalizeTanzaniaContact(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -260,7 +260,6 @@ function normalizeTanzaniaContact(value) {
 export default function ClientsPage({ clients, onRegister }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
-  const [geoDraft, setGeoDraft] = useState("");
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [contactError, setContactError] = useState("");
@@ -275,9 +274,6 @@ export default function ClientsPage({ clients, onRegister }) {
   const locationsToSubmit = pendingLocation && !form.locations.some((location) => location.toLowerCase() === pendingLocation.toLowerCase())
     ? [...form.locations, pendingLocation]
     : form.locations;
-  const geoLocationsToSubmit = pendingLocation
-    ? mergeGeoLocation(form.geoLocations, pendingLocation, geoDraft)
-    : form.geoLocations;
 
   function submit(event) {
     event.preventDefault();
@@ -294,11 +290,9 @@ export default function ClientsPage({ clients, onRegister }) {
       contact,
       email: form.email,
       locations: locationsToSubmit,
-      geoLocations: geoLocationsToSubmit,
     }).then(() => {
       setForm(emptyClient);
       setLocationQuery("");
-      setGeoDraft("");
     }).catch(() => {});
   }
 
@@ -336,7 +330,7 @@ export default function ClientsPage({ clients, onRegister }) {
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-          <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} geoDraft={geoDraft} setGeoDraft={setGeoDraft} error={locationError} setError={setLocationError} />
+          <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} error={locationError} setError={setLocationError} />
         </div>
         <div className="button-row"><button className="btn" disabled={!locationsToSubmit.length}>Register Client</button></div>
       </form>
@@ -347,28 +341,15 @@ export default function ClientsPage({ clients, onRegister }) {
       {!visible.length ? <div className="panel empty">No clients match this search.</div> : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Client</th><th>Contact</th><th>Email</th><th>Location(s)</th><th>Geo Location</th></tr></thead>
+            <thead><tr><th>Client</th><th>Contact</th><th>Email</th><th>Location(s)</th></tr></thead>
             <tbody>{visible.map((client) => (
-              <tr key={client.id}><td><strong>{client.name}</strong></td><td>{client.contact}</td><td>{client.email}</td><td>{(client.locations || []).join(", ")}</td><td>{formatClientGeoLocations(client.geoLocations)}</td></tr>
+              <tr key={client.id}><td><strong>{client.name}</strong></td><td>{client.contact}</td><td>{client.email}</td><td>{(client.locations || []).join(", ")}</td></tr>
             ))}</tbody>
           </table>
         </div>
       )}
     </>
   );
-}
-
-function mergeGeoLocation(geoLocations, location, geoDraft) {
-  const [latitude, longitude] = String(geoDraft).split(",").map((value) => Number(value.trim()));
-  if (!location || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return geoLocations;
-  return [...geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }];
-}
-
-function formatClientGeoLocations(geoLocations = []) {
-  if (!geoLocations.length) return "-";
-  return geoLocations
-    .map((item) => `${Number(item.latitude).toFixed(5)}, ${Number(item.longitude).toFixed(5)}`)
-    .join("; ");
 }
 
 export function CountryCodePicker({ open, selectedIso, setOpen, onChange }) {
@@ -429,7 +410,7 @@ function FlagImage({ iso, country }) {
   );
 }
 
-function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft, error, setError }) {
+function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
   const [suggestions, setSuggestions] = useState([]);
   const [status, setStatus] = useState("idle");
   const [isOpen, setIsOpen] = useState(false);
@@ -476,22 +457,14 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
     };
   }, [query, form.locations]);
 
-  function addLocation(value, geo = null) {
+  function addLocation(value) {
     const location = value.trim();
     if (!location) return;
-    const [draftLatitude, draftLongitude] = String(geoDraft).split(",").map((entry) => entry.trim());
-    const latitude = Number(geo?.latitude ?? draftLatitude);
-    const longitude = Number(geo?.longitude ?? draftLongitude);
     if (!form.locations.some((item) => item.toLowerCase() === location.toLowerCase())) {
-      const hasGeoLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
-      const geoLocations = hasGeoLocation
-        ? [...form.geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }]
-        : form.geoLocations;
-      setForm({ ...form, locations: [...form.locations, location], geoLocations });
+      setForm({ ...form, locations: [...form.locations, location] });
     }
     setError("");
     setQuery("");
-    setGeoDraft("");
     setSuggestions([]);
     setIsOpen(false);
     setStatus("idle");
@@ -568,7 +541,6 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
           </div>
         </div>
       </label>
-      <label>Geo Location (optional)<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
       {error && <small className="field-error">{error}</small>}
       {!!form.locations.length && (
         <div className="location-chips">
