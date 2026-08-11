@@ -716,6 +716,10 @@ function Doc1Actions({ user, doc, run }) {
   const engineerEquipment = doc.store?.items || [];
   const [salesEquipment, setSalesEquipment] = useState(doc.sales?.equipment?.length ? doc.sales.equipment : (doc.store?.items || []));
   const equipmentTotal = salesEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
+  const accountsEquipment = doc.sales?.equipment?.length ? doc.sales.equipment : engineerEquipment;
+  const accountsEquipmentTotal = accountsEquipment.reduce((total, item) => total + (Number(item.requestedQty || 0) * Number(item.unitCost || 0)), 0);
+  const accountsLaborCharge = Number(doc.sales?.laborCharge || 0);
+  const accountsRequiredTotal = Number(doc.sales?.amount ?? (accountsLaborCharge + accountsEquipmentTotal));
   const originalEngineerTotal = (doc.store?.items || []).reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
   const salesMustConfirm = doc.confirmationRequiredFrom === "Sales" || (!doc.confirmationRequiredFrom && originalEngineerTotal >= 1000000);
   const laborCharge = Number(sales.amount || 0);
@@ -764,7 +768,15 @@ function Doc1Actions({ user, doc, run }) {
       {!salesOnly && (
         <>
           <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={doc.status === "Pending Accounts"} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Moved to Store.")}>
-            <div className="form-grid"><p><strong>Location</strong><br />{doc.location || "-"}</p>{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
+            <div className="form-grid">
+              <label>Client Name<input readOnly value={doc.clientName || doc.sales?.clientName || "-"} /></label>
+              <label>Location<input readOnly value={doc.location || doc.sales?.location || "-"} /></label>
+              <label>Installation Cost / Labour Charge<input readOnly value={money(accountsLaborCharge, sales.currency)} /></label>
+              <label>Equipment Cost<input readOnly value={money(accountsEquipmentTotal, sales.currency)} /></label>
+            </div>
+            <EquipmentCostEditor items={accountsEquipment} locked currency={sales.currency || "TZS"} />
+            <div className="equipment-total-bar sales-total-bar"><strong>Total Cost Required</strong><span>{money(accountsRequiredTotal, sales.currency)}</span></div>
+            <div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required disabled={!accountsOpen} value={accounts.remarks} onChange={(e) => setAccounts({ ...accounts, remarks: e.target.value })} /></label></div>
           </ActionPanel>
           {!accountsOnly && (
             <>
