@@ -1406,12 +1406,6 @@ def create_client():
         if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
             raise ValueError("Geo location coordinates are invalid")
         geo_locations.append({"location": location, "latitude": latitude, "longitude": longitude})
-    missing_geo_locations = [
-        location for location in cleaned_locations
-        if not any(item["location"] == location for item in geo_locations)
-    ]
-    if missing_geo_locations:
-        raise ValueError("Add geo location coordinates for every client location")
     email = normalize_email(payload.get("email"))
     if any(client.get("email", "").lower() == email for client in STATE["clients"]):
         raise ValueError("A client with this email is already registered")
@@ -1805,13 +1799,14 @@ def hoc_submit(document_id: str):
     if decision not in {"approve", "decline"}:
         raise ValueError("Select whether to approve or decline this onboarding")
 
+    remarks = require_text(payload, "remarks", "Decline comments", max_length=500) if decision == "decline" else optional_text(payload, "remarks")
     doc["hoc"] = {
         "decision": decision,
         "reviewedBy": user["id"],
         "reviewedByName": user["name"],
         "reviewedByRole": user["role"],
         "reviewedAt": now_iso(),
-        "remarks": optional_text(payload, "remarks"),
+        "remarks": remarks,
     }
     if decision == "approve":
         set_route(doc, "Pending Accounts", "Accounts")
@@ -1819,7 +1814,7 @@ def hoc_submit(document_id: str):
         notify("Accounts", f"{doc['number']} was approved by Head of Commercial and is waiting for billing.")
     else:
         set_route(doc, "Returned to Sales", "Sales")
-        doc["history"].append(history(user["id"], "HOC declined onboarding", "Returned to Sales for review.", user["name"]))
+        doc["history"].append(history(user["id"], "HOC declined onboarding", f"Returned to Sales for review. Reason: {remarks}", user["name"]))
         notify("Sales", f"{doc['number']} was declined by Head of Commercial and returned for review.")
     return jsonify(doc)
 

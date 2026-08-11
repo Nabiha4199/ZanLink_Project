@@ -287,10 +287,6 @@ export default function ClientsPage({ clients, onRegister }) {
       setContactError("Enter a valid Tanzania number, for example 0712 345 678.");
       return;
     }
-    if (geoLocationsToSubmit.length < locationsToSubmit.length) {
-      setLocationError("Add one geo location for every registered client location.");
-      return;
-    }
     setContactError("");
     setLocationError("");
     onRegister({
@@ -486,12 +482,11 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
     const [draftLatitude, draftLongitude] = String(geoDraft).split(",").map((entry) => entry.trim());
     const latitude = Number(geo?.latitude ?? draftLatitude);
     const longitude = Number(geo?.longitude ?? draftLongitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setError("Enter Geo Location as latitude, longitude before adding this location.");
-      return;
-    }
     if (!form.locations.some((item) => item.toLowerCase() === location.toLowerCase())) {
-      const geoLocations = [...form.geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }];
+      const hasGeoLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+      const geoLocations = hasGeoLocation
+        ? [...form.geoLocations.filter((item) => item.location !== location), { location, latitude, longitude }]
+        : form.geoLocations;
       setForm({ ...form, locations: [...form.locations, location], geoLocations });
     }
     setError("");
@@ -573,7 +568,7 @@ function LocationPicker({ form, setForm, query, setQuery, geoDraft, setGeoDraft,
           </div>
         </div>
       </label>
-      <label>Geo Location<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
+      <label>Geo Location (optional)<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
       {error && <small className="field-error">{error}</small>}
       {!!form.locations.length && (
         <div className="location-chips">

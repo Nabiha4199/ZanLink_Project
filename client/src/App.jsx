@@ -774,10 +774,10 @@ function HocApproval({ user, doc, enabled, run }) {
         <p><strong>MRR</strong><br />{money(doc.sales?.mrr, doc.sales?.currency)}</p>
       </div>
       <EquipmentCostEditor items={salesEquipment} locked currency={doc.sales?.currency || "TZS"} />
-      <label>Approval Comments<textarea disabled={!enabled} value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
+      <label>Approval Comments <small>(required when declining)</small><textarea required={enabled} disabled={!enabled} value={remarks} onChange={(event) => setRemarks(event.target.value)} /></label>
       {enabled && <div className="button-row">
         <button className="btn" type="button" onClick={() => run(() => api.hoc(user, doc.id, { decision: "approve", remarks }), "Approved and submitted to Accounts.")}>Approve to Accounts</button>
-        <button className="btn danger" type="button" onClick={() => run(() => api.hoc(user, doc.id, { decision: "decline", remarks }), "Declined and returned to Sales.")}>Decline to Sales</button>
+        <button className="btn danger" type="button" disabled={!remarks.trim()} onClick={() => run(() => api.hoc(user, doc.id, { decision: "decline", remarks }), "Declined and returned to Sales.")}>Decline to Sales</button>
       </div>}
     </form>
   );
