@@ -391,6 +391,8 @@ function DocumentDetail({ user, doc, onBack, run }) {
 function PendingManagementDocuments({ user, doc, run }) {
   const onboardingPrintId = `pending-onboarding-print-${doc.id}`;
   const stockPrintId = `pending-stock-print-${doc.id}`;
+  const verificationPrintId = `pending-verification-print-${doc.id}`;
+  const printIds = doc.clientConfirmation?.dataUrl ? [onboardingPrintId, stockPrintId, verificationPrintId] : [onboardingPrintId, stockPrintId];
   const [remarks, setRemarks] = useState(doc.management?.remarks || "");
   const canApprove = canAct(user, "Management");
   return (
@@ -404,12 +406,13 @@ function PendingManagementDocuments({ user, doc, run }) {
         <div className="button-row">
           <button className="btn secondary" onClick={() => printElementById(onboardingPrintId)}>Print Onboarding Doc</button>
           <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Doc</button>
-          <button className="btn" onClick={() => printElementsByIds([onboardingPrintId, stockPrintId])}>Print All</button>
+          <button className="btn" onClick={() => printElementsByIds(printIds)}>Print All</button>
         </div>
       </div>
       <div className="document-preview-grid">
         <OnboardingPreview doc={doc} printId={onboardingPrintId} />
         <StockRequisitionPreview doc={doc} printId={stockPrintId} />
+        {doc.clientConfirmation?.dataUrl && <ClientVerificationPreview doc={doc} printId={verificationPrintId} />}
       </div>
       {canApprove && (
         <ActionPanel title="Management Approval" enabled initiallyEditing actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks }), "Document completed.")}>
@@ -494,6 +497,8 @@ function MaintenanceCertificate({ user, doc }) {
 function CompletedEngineerDocuments({ user, doc }) {
   const onboardingPrintId = `onboarding-print-${doc.id}`;
   const stockPrintId = `stock-print-${doc.id}`;
+  const verificationPrintId = `verification-print-${doc.id}`;
+  const printIds = doc.clientConfirmation?.dataUrl ? [onboardingPrintId, stockPrintId, verificationPrintId] : [onboardingPrintId, stockPrintId];
   async function download(kind, filename) {
     const blob = await api.downloadDocument(user, doc.id, kind);
     const url = URL.createObjectURL(blob);
@@ -519,12 +524,13 @@ function CompletedEngineerDocuments({ user, doc }) {
           <button className="btn secondary" onClick={() => download("stock-requisition", `${doc.clientName}_stock_requisition.pdf`)}>Download Stock Requisition PDF</button>
           <button className="btn secondary" onClick={() => printElementById(onboardingPrintId)}>Print Onboarding Doc</button>
           <button className="btn secondary" onClick={() => printElementById(stockPrintId)}>Print Stock Doc</button>
-          <button className="btn" onClick={() => printElementsByIds([onboardingPrintId, stockPrintId])}>Print All</button>
+          <button className="btn" onClick={() => printElementsByIds(printIds)}>Print All</button>
         </div>
       </div>
       <div className="document-preview-grid">
         <OnboardingPreview doc={doc} printId={onboardingPrintId} />
         <StockRequisitionPreview doc={doc} printId={stockPrintId} />
+        {doc.clientConfirmation?.dataUrl && <ClientVerificationPreview doc={doc} printId={verificationPrintId} />}
       </div>
     </section>
   );
@@ -555,10 +561,9 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       </header>
       <h3>Customer Information</h3>
       <div className="check-row">
-        <PaperCheck label="New Installation" active={(doc.serviceType || "new_installation") === "new_installation"} />
-        <PaperCheck label="Reconnection" active={doc.serviceType === "reconnection"} />
-        <PaperCheck label="WiFi Extension" active={doc.serviceType === "wifi_extension"} />
-        <PaperCheck label="TT" />
+        {serviceTypes.map(([value, label]) => (
+          <PaperCheck key={value} label={label} active={(doc.serviceType || "new_installation") === value} />
+        ))}
       </div>
       <div className="paper-fields">
         <Field label="Client Name" value={doc.clientName} />
@@ -583,13 +588,28 @@ function OnboardingPreview({ doc, printId, extraClass = "" }) {
       <div className="paper-fields two"><Field label="Approved By" value={doc.management?.approvedBy ? managementName : "Pending Management"} /><Field label="Comments" value={doc.management?.remarks || "-"} /></div>
       <h3>Finance & Billing</h3>
       <div className="paper-fields two"><Field label="Billing Confirmation" value={isBilled ? "Billed" : "Not Billed"} /><Field label="User Created in System" value={isBilled ? "Yes" : "No"} /><Field label="Date" value={billingDate} /><Field label="Received by" value={engineerName} /></div>
-      {doc.clientConfirmation?.dataUrl && (
-        <section className="printed-confirmation no-print">
-          <h3>Client Email Confirmation</h3>
-          <p>Uploaded by {doc.clientConfirmation.uploadedByName}</p>
-          <img src={doc.clientConfirmation.dataUrl} alt="Client email confirmation screenshot" />
-        </section>
-      )}
+    </article>
+  );
+}
+
+function ClientVerificationPreview({ doc, printId, extraClass = "" }) {
+  if (!doc.clientConfirmation?.dataUrl) return null;
+  return (
+    <article id={printId} className={`paper-form printed-confirmation ${extraClass}`}>
+      <header className="paper-head">
+        <span className="paper-logo">zanlink</span>
+        <div>
+          <h2>Client Verification</h2>
+          <p>Form No. {doc.number}</p>
+        </div>
+      </header>
+      <div className="paper-fields two">
+        <Field label="Client Name" value={doc.clientName} />
+        <Field label="Uploaded By" value={doc.clientConfirmation.uploadedByName || "-"} />
+        <Field label="File" value={doc.clientConfirmation.name || "-"} />
+        <Field label="Uploaded At" value={doc.clientConfirmation.uploadedAt ? formatDate(doc.clientConfirmation.uploadedAt) : "-"} />
+      </div>
+      <img src={doc.clientConfirmation.dataUrl} alt="Client email confirmation screenshot" />
     </article>
   );
 }
@@ -735,6 +755,8 @@ function Doc1Actions({ user, doc, run }) {
   const [clientConfirmation, setClientConfirmation] = useState(null);
   const storeOnboardingPrintId = `store-onboarding-print-${doc.id}`;
   const storeStockPrintId = `store-stock-print-${doc.id}`;
+  const storeVerificationPrintId = `store-verification-print-${doc.id}`;
+  const storePrintIds = doc.clientConfirmation?.dataUrl ? [storeOnboardingPrintId, storeStockPrintId, storeVerificationPrintId] : [storeOnboardingPrintId, storeStockPrintId];
 
   return (
     <>
@@ -783,12 +805,13 @@ function Doc1Actions({ user, doc, run }) {
               <ActionPanel title="Store Section" enabled={storeOpen} initiallyEditing={doc.status === "Pending Store"} actionLabel={storeManager ? "Approve Requested Equipment" : "Confirm Stock and Validate"} onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}>
                 <OnboardingPreview doc={doc} printId={storeOnboardingPrintId} extraClass="print-only-document" />
                 <StockRequisitionPreview doc={{ ...doc, store: { ...doc.store, items } }} printId={storeStockPrintId} extraClass="print-only-document" />
+                {doc.clientConfirmation?.dataUrl && <ClientVerificationPreview doc={doc} printId={storeVerificationPrintId} extraClass="print-only-document" />}
                 <div className="form-grid"><p><strong>Location</strong><br />{doc.location || "-"}</p></div>
                 <ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode={storeManager} />
                 {!storeManager && <div className="form-grid store-remarks-grid"><p><strong>Total Sales Cost</strong><br />{money(doc.sales?.amount, doc.sales?.currency)}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency)}</p><label className="wide">Store Remarks<textarea disabled={!storeOpen} value={storeRemarks} onChange={(e) => setStoreRemarks(e.target.value)} /></label><div className="store-print-actions no-print">
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeOnboardingPrintId)}>Print Onboarding Doc</button>
                   <button className="btn secondary" type="button" onClick={() => printElementById(storeStockPrintId)}>Print Stock Doc</button>
-                  <button className="btn" type="button" onClick={() => printElementsByIds([storeOnboardingPrintId, storeStockPrintId])}>Print All</button>
+                  <button className="btn" type="button" onClick={() => printElementsByIds(storePrintIds)}>Print All</button>
                 </div></div>}
               </ActionPanel>
               {!storeManager && (

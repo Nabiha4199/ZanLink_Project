@@ -52,6 +52,7 @@ export const serviceTypes = [
   ["new_installation", "New Installation"],
   ["reconnection", "Reconnection"],
   ["wifi_extension", "WiFi Extension"],
+  ["tt", "TT"],
   ["shifting_connection", "Shifting Connection"],
   ["general_maintenance", "General Maintenance"],
 ];

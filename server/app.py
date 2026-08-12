@@ -814,6 +814,9 @@ def service_type_label(value: str | None) -> str:
         "new_installation": "New Installation",
         "reconnection": "Reconnection",
         "wifi_extension": "WiFi Extension",
+        "tt": "TT",
+        "shifting_connection": "Shifting Connection",
+        "general_maintenance": "General Maintenance",
     }
     return labels.get(value or "new_installation", "New Installation")
 
@@ -844,8 +847,9 @@ def build_onboarding_pdf(doc: dict) -> BytesIO:
     draw_checkbox(pdf, "New Installation", selected_type == "new_installation", 22 * mm, y + 22)
     draw_checkbox(pdf, "Reconnection", selected_type == "reconnection", 62 * mm, y + 22)
     draw_checkbox(pdf, "WiFi Extension", selected_type == "wifi_extension", 98 * mm, y + 22)
-    draw_checkbox(pdf, "Shifting Connection", selected_type == "shifting_connection", 132 * mm, y + 22)
-    draw_checkbox(pdf, "General Maintenance", selected_type == "general_maintenance", 22 * mm, y + 34)
+    draw_checkbox(pdf, "TT", selected_type == "tt", 132 * mm, y + 22)
+    draw_checkbox(pdf, "Shifting Connection", selected_type == "shifting_connection", 22 * mm, y + 34)
+    draw_checkbox(pdf, "General Maintenance", selected_type == "general_maintenance", 72 * mm, y + 34)
     draw_label_value(pdf, "Client Name", doc["clientName"], 22 * mm, y, 56 * mm)
     draw_label_value(pdf, "Location", doc["location"], 85 * mm, y, 52 * mm)
     draw_label_value(pdf, "Service", doc["service"], 143 * mm, y, 45 * mm)
@@ -1587,7 +1591,7 @@ def create_doc1():
     require_department(user, "Engineer")
     payload = request.get_json(force=True)
     service_type = payload.get("serviceType", "new_installation")
-    if service_type not in {"new_installation", "reconnection", "wifi_extension", "shifting_connection", "general_maintenance"}:
+    if service_type not in {"new_installation", "reconnection", "wifi_extension", "tt", "shifting_connection", "general_maintenance"}:
         raise ValueError("Please select a valid onboarding type")
     client, location, contact, geo_location = registered_client_details(payload)
     currency = str(payload.get("currency") or "TZS").upper()
