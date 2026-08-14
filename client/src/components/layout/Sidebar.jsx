@@ -106,9 +106,9 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
         {canCreate(user) && <button data-tour="create" className={view === "doc1" ? "active" : ""} onClick={() => onNavigate("doc1")}><NavIcon name="onboarding" />New Onboarding</button>}
         {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><NavIcon name="maintenance" />General Maintenance</button>}
         {["System Admin", "Management"].includes(user.role) && <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><NavIcon name="summaries" />Delivery Note</button>}
+        <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><NavIcon name="reports" />Reports</button>
         {["System Admin", "Management"].includes(user.role) && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><NavIcon name="users" />User Management</button>}
         {["System Admin", "Management"].includes(user.role) && <button className={view === "pricing" ? "active" : ""} onClick={() => onNavigate("pricing")}><NavIcon name="pricing" />Item Pricing</button>}
-        <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><NavIcon name="reports" />Reports</button>
       </nav>
       <button className="tour-launch" onClick={onStartTour}><NavIcon name="tour" />Guided tour</button>
       <button className="logout" onClick={onLogout}><NavIcon name="logout" />Sign out</button>

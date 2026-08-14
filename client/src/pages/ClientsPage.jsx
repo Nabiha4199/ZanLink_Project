@@ -549,8 +549,6 @@ function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
           ))}
         </div>
       )}
-      <label>Geo Location (optional)<input inputMode="decimal" placeholder="Latitude, longitude (e.g. -6.1659, 39.2026)" value={geoDraft} onChange={(event) => setGeoDraft(event.target.value)} /></label>
-      {error && <small className="field-error">{error}</small>}
     </div>
   );
 }

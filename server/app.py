@@ -735,13 +735,30 @@ def build_request_report(docs: list[dict], days: int) -> dict:
     }
 
 
-def build_material_issued_report(docs: list[dict], days: int) -> dict:
+def build_material_issued_report(docs: list[dict], days: int, document_type: str, start: str | None = None, end: str | None = None) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    start_at = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else None
+    end_at = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1) if end else None
     rows = []
     for doc in docs:
-        if parse_iso(doc.get("createdAt")) < cutoff:
+        if doc.get("type") != document_type:
             continue
-        for item in doc.get("store", {}).get("items", []):
+        # Onboarding materials are issued by Store. General Maintenance materials
+        # are leased only when Accounts completes its equipment review.
+        if document_type == "doc1":
+            items = doc.get("store", {}).get("items", [])
+            issued_at = history_action_at(doc, "Store completed the workflow") or doc.get("store", {}).get("approvedAt") or doc.get("createdAt")
+            purpose = "Sold to Client"
+        else:
+            if doc.get("status") != "Completed":
+                continue
+            items = doc.get("maintenance", {}).get("items", [])
+            issued_at = history_action_at(doc, "General Maintenance equipment reviewed") or doc.get("accounts", {}).get("processedAt") or doc.get("createdAt")
+            purpose = "Leased for General Maintenance"
+        issued_at_date = parse_iso(issued_at)
+        if issued_at_date < cutoff or (start_at and issued_at_date < start_at) or (end_at and issued_at_date >= end_at):
+            continue
+        for item in items:
             issued_qty = float(item.get("issuedQty") or 0)
             if issued_qty <= 0:
                 continue
@@ -749,8 +766,7 @@ def build_material_issued_report(docs: list[dict], days: int) -> dict:
                 "id": f"{doc['id']}-{item.get('itemId')}-{len(rows)}",
                 "number": doc["number"], "clientName": doc["clientName"], "location": doc.get("location", ""),
                 "itemId": item.get("itemId") or item.get("serialNumber") or "-", "name": item.get("name") or "-",
-                "purpose": item.get("purpose") or "-", "issuedQty": issued_qty,
-                "issuedAt": history_action_at(doc, "Store completed the workflow") or doc.get("createdAt"),
+                "purpose": purpose, "issuedQty": issued_qty, "issuedAt": issued_at,
             })
     rows.sort(key=lambda row: parse_iso(row["issuedAt"]), reverse=True)
     return {"days": days, "materials": rows, "totalMaterials": len(rows), "totalIssued": sum(row["issuedQty"] for row in rows)}
@@ -2017,10 +2033,18 @@ def reports():
                 "custom": build_request_report(custom_docs, 365000),
             },
             "materialPeriods": {
-                "day": build_material_issued_report(docs, 1),
-                "week": build_material_issued_report(docs, 7),
-                "month": build_material_issued_report(docs, 30),
-                "custom": build_material_issued_report(custom_docs, 365000),
+                "sold": {
+                    "day": build_material_issued_report(docs, 1, "doc1"),
+                    "week": build_material_issued_report(docs, 7, "doc1"),
+                    "month": build_material_issued_report(docs, 30, "doc1"),
+                    "custom": build_material_issued_report(docs, 365000, "doc1", request.args.get("start"), request.args.get("end")),
+                },
+                "leased": {
+                    "day": build_material_issued_report(docs, 1, "maintenance"),
+                    "week": build_material_issued_report(docs, 7, "maintenance"),
+                    "month": build_material_issued_report(docs, 30, "maintenance"),
+                    "custom": build_material_issued_report(docs, 365000, "maintenance", request.args.get("start"), request.args.get("end")),
+                },
             },
         }
     )
