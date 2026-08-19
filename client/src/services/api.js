@@ -31,7 +31,9 @@ export const api = {
     return request(`/api/documents?${params.toString()}`, {}, user);
   },
   clients: (user) => request("/api/clients", {}, user),
+  clientPlans: (user) => request("/api/client-plans", {}, user),
   createClient: (user, payload) => request("/api/clients", { method: "POST", body: JSON.stringify(payload) }, user),
+  updateClient: (user, clientId, payload) => request(`/api/clients/${clientId}`, { method: "PATCH", body: JSON.stringify(payload) }, user),
   createDoc1: (user, payload) => request("/api/documents/doc1", { method: "POST", body: JSON.stringify(payload) }, user),
   createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, user),
   createSurvey: (user, payload) => request("/api/documents/survey", { method: "POST", body: JSON.stringify(payload) }, user),

@@ -246,7 +246,7 @@ export const countryCodes = [
   ["ZW", "Zimbabwe", "+263"],
 ];
 
-const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", locations: [] };
+const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", plans: "", serviceArea: "", street: "", siteLocation: "", connectionType: "", staticIp: "", locations: [] };
 
 function normalizeTanzaniaContact(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -257,18 +257,21 @@ function normalizeTanzaniaContact(value) {
   return `+255 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
 }
 
-export default function ClientsPage({ clients, onRegister }) {
+export default function ClientsPage({ clients, onRegister, onUpdate }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [contactError, setContactError] = useState("");
   const [locationError, setLocationError] = useState("");
-  const visible = clients.filter((client) =>
-    `${client.name} ${client.contact} ${client.email} ${(client.locations || []).join(" ")}`
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const [editingClient, setEditingClient] = useState(null);
+  const editFormRef = useRef(null);
+  const clientDetails = (client) => [
+    client.name, client.contact, client.email, client.plans, client.serviceArea,
+    client.street, client.siteLocation, client.connectionType, client.staticIp,
+    ...(client.locations || []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  const visible = clients.filter((client) => clientDetails(client).includes(search.toLowerCase()));
 
   const pendingLocation = locationQuery.trim();
   const locationsToSubmit = pendingLocation && !form.locations.some((location) => location.toLowerCase() === pendingLocation.toLowerCase())
@@ -290,10 +293,30 @@ export default function ClientsPage({ clients, onRegister }) {
       contact,
       email: form.email,
       locations: locationsToSubmit,
+      plans: form.plans,
+      serviceArea: form.serviceArea,
+      street: form.street,
+      siteLocation: form.siteLocation,
+      connectionType: form.connectionType,
+      staticIp: form.staticIp,
     }).then(() => {
       setForm(emptyClient);
       setLocationQuery("");
     }).catch(() => {});
+  }
+
+  function startEditing(client) {
+    setEditingClient({ ...client, locationsText: (client.locations || []).join(", ") });
+    window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function saveClient(event) {
+    event.preventDefault();
+    const { locationsText, ...client } = editingClient;
+    onUpdate(client.id, {
+      ...client,
+      locations: locationsText.split(/[\n,]/).map((location) => location.trim()).filter(Boolean),
+    }).then(() => setEditingClient(null)).catch(() => {});
   }
 
   return (
@@ -330,20 +353,46 @@ export default function ClientsPage({ clients, onRegister }) {
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+          <label>Plan(s)<input value={form.plans} onChange={(event) => setForm({ ...form, plans: event.target.value })} placeholder="For example, DIA 20M" /></label>
+          <label>Service Area<input value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} /></label>
+          <label>Street<input value={form.street} onChange={(event) => setForm({ ...form, street: event.target.value })} /></label>
+          <label>Site Location(s)<input value={form.siteLocation} onChange={(event) => setForm({ ...form, siteLocation: event.target.value })} /></label>
+          <label>Connection Type<input value={form.connectionType} onChange={(event) => setForm({ ...form, connectionType: event.target.value })} placeholder="IP, Radius, Rad/IP/L2" /></label>
+          <label>Static IP<input value={form.staticIp} onChange={(event) => setForm({ ...form, staticIp: event.target.value })} placeholder="Yes or No" /></label>
           <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} error={locationError} setError={setLocationError} />
         </div>
         <div className="button-row"><button className="btn" disabled={!locationsToSubmit.length}>Register Client</button></div>
       </form>
+      {editingClient && <form className="panel" onSubmit={saveClient} ref={editFormRef}>
+        <div className="section-title"><h2>Edit Client #{clients.findIndex((client) => client.id === editingClient.id) + 1}</h2></div>
+        <div className="form-grid">
+          <label>Client Name<input required value={editingClient.name} onChange={(event) => setEditingClient({ ...editingClient, name: event.target.value })} /></label>
+          <label>Contact Number<input value={editingClient.contact || ""} onChange={(event) => setEditingClient({ ...editingClient, contact: event.target.value })} /></label>
+          <label>Email Address<input type="email" value={editingClient.email || ""} onChange={(event) => setEditingClient({ ...editingClient, email: event.target.value })} /></label>
+          <label>Plan(s)<input value={editingClient.plans || ""} onChange={(event) => setEditingClient({ ...editingClient, plans: event.target.value })} /></label>
+          <label>Service Area<input value={editingClient.serviceArea || ""} onChange={(event) => setEditingClient({ ...editingClient, serviceArea: event.target.value })} /></label>
+          <label>Street<input value={editingClient.street || ""} onChange={(event) => setEditingClient({ ...editingClient, street: event.target.value })} /></label>
+          <label>Site Location(s)<input value={editingClient.siteLocation || ""} onChange={(event) => setEditingClient({ ...editingClient, siteLocation: event.target.value })} /></label>
+          <label>Connection Type<input value={editingClient.connectionType || ""} onChange={(event) => setEditingClient({ ...editingClient, connectionType: event.target.value })} /></label>
+          <label>Static IP<input value={editingClient.staticIp || ""} onChange={(event) => setEditingClient({ ...editingClient, staticIp: event.target.value })} /></label>
+          <label className="wide">Request Location(s)<textarea value={editingClient.locationsText} onChange={(event) => setEditingClient({ ...editingClient, locationsText: event.target.value })} placeholder="Separate locations with commas" /></label>
+        </div>
+        <div className="button-row"><button className="btn">Save Changes</button><button type="button" className="btn secondary" onClick={() => setEditingClient(null)}>Cancel</button></div>
+      </form>}
       <section className="panel filters client-filters">
-        <div className="filter-heading"><div><strong>Registered Clients</strong><span>{clients.length} client(s)</span></div></div>
-        <input aria-label="Search clients" placeholder="Search name, contact, email or location" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <div className="filter-heading"><div><strong>Registered Clients</strong><span>{clients.length} client(s) total · {visible.length} shown</span></div></div>
+        <input aria-label="Search clients" placeholder="Search name, contact, plan, street, site, email or connection" value={search} onChange={(event) => setSearch(event.target.value)} />
       </section>
       {!visible.length ? <div className="panel empty">No clients match this search.</div> : (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Client</th><th>Contact</th><th>Email</th><th>Location(s)</th></tr></thead>
+        <div className="table-wrap client-directory-wrap">
+          <table className="client-directory-table">
+            <thead><tr><th>#</th><th>Client</th><th>Contact</th><th>Email</th><th>Plan(s)</th><th>Service Area</th><th>Street</th><th>Site Location(s)</th><th>Connection</th><th>Static IP</th><th>Action</th></tr></thead>
             <tbody>{visible.map((client) => (
-              <tr key={client.id}><td><strong>{client.name}</strong></td><td>{client.contact}</td><td>{client.email}</td><td>{(client.locations || []).join(", ")}</td></tr>
+              <tr key={client.id}>
+                <td>{clients.indexOf(client) + 1}</td><td><strong>{client.name}</strong></td><td>{client.contact || "—"}</td><td>{client.email || "—"}</td>
+                <td>{client.plans || "—"}</td><td>{client.serviceArea || "—"}</td><td>{client.street || "—"}</td><td>{client.siteLocation || "—"}</td>
+                <td>{client.connectionType || "—"}</td><td>{client.staticIp || "—"}</td><td><button className="btn secondary" type="button" onClick={() => startEditing(client)}>Edit</button></td>
+              </tr>
             ))}</tbody>
           </table>
         </div>

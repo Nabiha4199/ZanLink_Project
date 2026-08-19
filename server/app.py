@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from urllib.parse import urlencode
 from uuid import uuid4
+from zipfile import ZipFile
+from xml.etree import ElementTree
 
 from flask import Flask, jsonify, redirect, request, session
 from flask import send_file
@@ -123,6 +125,67 @@ DELIVERY_NOTE_TERMS = """If any of the devices above is provided on test basis, 
 
 2. Client should make payments for any device/accessories or transport cost applicable within 5 days of the Invoice attached with this note. If client fails to settle the bill within this period, ZANLINK will either remove the device from client's premises and/or will deduct any applicable cost from client's subscription costs."""
 
+IMPORTED_CLIENT_PLANS: set[str] = set()
+
+
+def imported_clients() -> list[dict]:
+    """Read the supplied client workbook into the application's client record shape."""
+    workbook_path = os.getenv("CLIENT_IMPORT_XLSX", os.path.join(SERVER_DIRECTORY, "data", "clients.xlsx"))
+    if not os.path.isfile(workbook_path):
+        return []
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    try:
+        with ZipFile(workbook_path) as workbook:
+            strings_root = ElementTree.fromstring(workbook.read("xl/sharedStrings.xml"))
+            strings = ["".join(node.text or "" for node in item.iter(f"{namespace}t")) for item in strings_root.iter(f"{namespace}si")]
+            sheet = ElementTree.fromstring(workbook.read("xl/worksheets/sheet1.xml"))
+    except (OSError, KeyError, ElementTree.ParseError):
+        return []
+    clients = []
+    for row in sheet.iter(f"{namespace}row"):
+        values = [""] * 9
+        for cell in row.iter(f"{namespace}c"):
+            value = cell.find(f"{namespace}v")
+            raw = value.text if value is not None else ""
+            column = "".join(character for character in cell.get("r", "") if character.isalpha())
+            column_index = 0
+            for character in column:
+                column_index = column_index * 26 + ord(character) - ord("A") + 1
+            source_index = column_index - 2  # The workbook's client data begins in column B.
+            if source_index >= 0:
+                if source_index >= len(values):
+                    values.extend([""] * (source_index - len(values) + 1))
+                values[source_index] = strings[int(raw)] if cell.get("t") == "s" and raw else raw
+        for plan in values[2].replace("\u00a0", " ").split(","):
+            if plan.strip() and plan.strip().lower() != "internet plans":
+                IMPORTED_CLIENT_PLANS.add(plan.strip())
+        # Import every client row; the sheet repeats its column headings between batches.
+        if not values[0].strip() or values[0].strip().lower() == "full name":
+            continue
+        locations = []
+        source_locations = ([values[5]] if len(values) > 5 else []) + (values[6].replace("\u00a0", " ").split(",") if len(values) > 6 else [])
+        for location in source_locations:
+            location = " ".join(location.split()).strip()
+            if location and location.lower() not in {item.lower() for item in locations}:
+                locations.append(location)
+        clients.append({
+            "id": f"import-{row.get('r')}",
+            "name": values[0].strip(),
+            "contact": values[1].strip(),
+            "plans": values[2].strip(),
+            "serviceArea": values[3].strip(),
+            "email": values[4].strip() if len(values) > 4 else "",
+            "street": values[5].strip() if len(values) > 5 else "",
+            "siteLocation": values[6].strip() if len(values) > 6 else "",
+            "connectionType": values[7].strip() if len(values) > 7 else "",
+            "staticIp": values[8].strip() if len(values) > 8 else "",
+            "locations": locations,
+            "geoLocations": [],
+            "createdAt": now_iso(),
+            "imported": True,
+        })
+    return clients
+
 
 USERS = [
     {"id": "u1", "name": "Peter Kalezi", "username": "peter", "email": "peter@liquidtelecom.co.tz", "password": "demo1234", "role": "Engineer", "department": "Engineer"},
@@ -226,79 +289,10 @@ def draw_confirmation_page(pdf: canvas.Canvas, doc: dict) -> None:
 
 
 STATE = {
-    "counters": {"request": 3, "summary": 1, "monthly": {}},
-    "clients": [
-        {"id": "c1", "name": "Stone Town Hotel", "contact": "+255 777 100 400", "email": "info@stonetownhotel.example", "locations": ["Zanzibar"], "createdAt": now_iso()},
-        {"id": "c2", "name": "Airport Office", "contact": "+255 777 222 111", "email": "office@airport.example", "locations": ["Abeid Amani Karume Airport"], "createdAt": now_iso()},
-    ],
-    "documents": [
-        {
-            "id": "d1",
-            "type": "doc1",
-            "number": "REQ-000001",
-            "clientId": "c1",
-            "clientName": "Stone Town Hotel",
-            "contact": "+255 777 100 400",
-            "service": "Dedicated internet onboarding",
-            "serviceType": "new_installation",
-            "location": "Zanzibar",
-            "status": "Pending Store",
-            "currentDepartment": "Store",
-            "createdBy": "u1",
-            "createdByName": user_display_name("u1", "Engineer"),
-            "createdAt": now_iso(),
-            "engineer": {"notes": "Install router, outdoor radio and cabling for new client."},
-            "sales": {"amount": 1250000, "laborCharge": 100000, "packageCost": 1150000, "oneTimeTotal": 1250000, "grandTotal": 1250000, "remarks": "Business 50 Mbps package.", "submittedBy": "u2", "submittedByName": user_display_name("u2", "Sales")},
-            "accounts": {"billingAmount": 1250000, "invoiceNumber": "INV-2044", "remarks": "Invoice prepared.", "processedBy": "u3", "processedByName": user_display_name("u3", "Accounts Team")},
-            "store": {
-                "confirmed": False,
-                "amountMatches": None,
-                "remarks": "",
-                "items": [
-                    {"itemId": "RTR-001", "name": "Router", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "CPE", "unitCost": 180000},
-                    {"itemId": "RAD-001", "name": "Outdoor radio", "requestedQty": 1, "issuedQty": 0, "serialNumber": "", "purpose": "Connectivity", "unitCost": 520000},
-                ],
-            },
-            "management": {},
-            "history": [
-                history("u1", "Created Document 1", "Engineer submitted onboarding and requisition."),
-                history("u2", "Sales amount added", "Moved to Accounts."),
-                history("u3", "Billing added", "Moved to Store."),
-            ],
-        },
-        {
-            "id": "m1",
-            "type": "maintenance",
-            "number": "REQ-000002",
-            "clientId": "c2",
-            "clientName": "Airport Office",
-            "contact": "+255 777 222 111",
-            "service": "Link maintenance",
-            "location": "Abeid Amani Karume Airport",
-            "status": "Pending HOD",
-            "currentDepartment": "HOD",
-            "createdBy": "u1",
-            "createdByName": user_display_name("u1", "Engineer"),
-            "createdAt": now_iso(),
-            "maintenance": {
-                "fault": "Intermittent signal during rain.",
-                "action": "Inspect mast alignment and replace weatherproofing.",
-                "items": [
-                    {
-                        "name": "Fusion protection sleeve 60mm",
-                        "requestedQty": 600,
-                        "issuedQty": 600,
-                        "serialNumber": "3870",
-                        "purpose": "General Maintenance",
-                        "unitCost": 0,
-                    }
-                ],
-            },
-            "hod": {},
-            "accounts": {},
-            "history": [history("u1", "Created General Maintenance", "Waiting for HOD approval.")],
-        },
-    ],
+    "counters": {"request": 0, "summary": 0, "monthly": {}},
+    "clients": imported_clients(),
+    "clientPlans": sorted(IMPORTED_CLIENT_PLANS, key=str.casefold),
+    "documents": [],
     "summaries": [],
     "notifications": [],
     "pricing": {"usdToTzsRate": USD_TO_TZS_RATE, "items": deepcopy(DEFAULT_ITEM_PRICES)},
@@ -1495,6 +1489,12 @@ def clients():
     return jsonify(deepcopy(STATE["clients"]))
 
 
+@app.get("/api/client-plans")
+def client_plans():
+    current_user()
+    return jsonify(STATE["clientPlans"])
+
+
 @app.post("/api/clients")
 def create_client():
     current_user()
@@ -1516,11 +1516,39 @@ def create_client():
         "contact": normalize_tanzania_contact(payload.get("contact")),
         "email": email,
         "locations": cleaned_locations,
+        **{field: str(payload.get(field) or "").strip() for field in ("plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp")},
         "geoLocations": [],
         "createdAt": now_iso(),
     }
     STATE["clients"].insert(0, client)
     return jsonify(client), 201
+
+
+@app.patch("/api/clients/<client_id>")
+def update_client(client_id: str):
+    current_user()
+    client = find_client(client_id)
+    if not client:
+        raise ValueError("Client not found")
+    payload = request.get_json(force=True)
+    locations = payload.get("locations")
+    if not isinstance(locations, list):
+        raise ValueError("Locations must be a list")
+    cleaned_locations = list(dict.fromkeys(str(location).strip() for location in locations if str(location).strip()))
+    if any(len(location) > 180 for location in cleaned_locations):
+        raise ValueError("Each location must be 180 characters or fewer")
+    email = str(payload.get("email") or "").strip()
+    email = normalize_email(email) if email else ""
+    if email and any(item["id"] != client_id and item.get("email", "").lower() == email for item in STATE["clients"]):
+        raise ValueError("A client with this email is already registered")
+    client.update({
+        "name": require_text(payload, "name", "Client name"),
+        "contact": str(payload.get("contact") or "").strip(),
+        "email": email,
+        "locations": cleaned_locations,
+        **{field: str(payload.get(field) or "").strip() for field in ("plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp")},
+    })
+    return jsonify(client)
 
 
 @app.post("/api/login")

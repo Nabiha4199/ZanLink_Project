@@ -36,6 +36,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [summaries, setSummaries] = useState([]);
   const [clients, setClients] = useState([]);
+  const [clientPlans, setClientPlans] = useState([]);
   const [reports, setReports] = useState(null);
   const [users, setUsers] = useState([]);
   const [pricing, setPricing] = useState(defaultPricing);
@@ -47,12 +48,13 @@ function App() {
 
   async function refresh(nextFilters = filters) {
     if (!user) return;
-    const [accountData, docs, summaryData, reportData, clientData, userData, pricingData] = await Promise.all([
+    const [accountData, docs, summaryData, reportData, clientData, clientPlanData, userData, pricingData] = await Promise.all([
       api.account(user),
       api.documents(user, nextFilters),
       ["System Admin", "Management"].includes(user.role) ? api.summaries(user) : Promise.resolve([]),
       api.reports(user),
       api.clients(user),
+      api.clientPlans(user),
       ["System Admin", "Management"].includes(user.role) ? api.users(user) : Promise.resolve([]),
       api.pricing(user),
     ]);
@@ -60,6 +62,7 @@ function App() {
     setSummaries(summaryData);
     setReports(reportData);
     setClients(clientData);
+    setClientPlans(clientPlanData);
     setUsers(userData);
     setPricing(mergePricingCatalog(pricingData));
     setUser((currentUser) => JSON.stringify(currentUser) === JSON.stringify(accountData) ? currentUser : accountData);
@@ -141,6 +144,18 @@ function App() {
     }
   }
 
+  async function updateClient(clientId, payload) {
+    try {
+      await api.updateClient(user, clientId, payload);
+      await refresh();
+      setMessage("Client details updated.");
+      setTimeout(() => setMessage(""), 2600);
+    } catch (error) {
+      showError(error);
+      throw error;
+    }
+  }
+
   async function updateUser(userId, changes) {
     try {
       await api.updateUser(user, userId, changes);
@@ -205,9 +220,9 @@ function App() {
         ) : view === "maintenance" ? (
           <MaintenanceForm clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "General Maintenance submitted to HOD.")} />
         ) : view === "survey" ? (
-          <SurveyRequestForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createSurvey(user, payload), "Site survey request submitted to Engineer.")} />
+          <SurveyRequestForm clients={clients} plans={clientPlans} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createSurvey(user, payload), "Site survey request submitted to Engineer.")} />
         ) : view === "clients" ? (
-          <ClientsPage clients={clients} onRegister={registerClient} />
+          <ClientsPage clients={clients} onRegister={registerClient} onUpdate={updateClient} />
         ) : view === "users" && ["System Admin", "Management"].includes(user.role) ? (
           <UserManagementPage currentUser={user} users={users} onCreateUser={createUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} />
         ) : view === "pricing" && ["System Admin", "Management"].includes(user.role) ? (
@@ -335,12 +350,17 @@ function MaintenanceForm({ clients, pricing, onSubmit, onCancel }) {
   );
 }
 
-function SurveyRequestForm({ clients, onSubmit, onCancel }) {
+function SurveyRequestForm({ clients, plans, onSubmit, onCancel }) {
+  const availablePlans = [...new Set([
+    ...subscriptionPackages,
+    ...plans,
+    ...clients.flatMap((client) => String(client.plans || "").replace(/\u00a0/g, " ").split(",").map((plan) => plan.trim()).filter(Boolean)),
+  ])].sort((first, second) => first.localeCompare(second));
   const [form, setForm] = useState({ clientId: "new", clientName: "", countryIso: "TZ", location: "", contact: "", email: "", package: subscriptionPackages[0] || "" });
   return <FormShell title="Request Site Survey" subtitle="Sales starts the request; Engineer performs the survey." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Engineer">
     <div className="form-grid">
       <ClientFields clients={clients} form={form} setForm={setForm} allowNewClient />
-      <label>Package Needed<select required value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })}>{subscriptionPackages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+      <label>Package Needed<select required value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })}>{availablePlans.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
     </div>
   </FormShell>;
 }
@@ -1383,6 +1403,43 @@ function formatContactNumber(countryIso, number) {
   return `${selectedCountry[2]} ${trimmedNumber}`;
 }
 
+function ClientPicker({ clients, value, onChange, allowNewClient }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = clients.find((client) => client.id === value);
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = clients.filter((client) => !normalizedQuery || [client.name, client.contact, client.email, client.plans, client.serviceArea, client.street, client.siteLocation, client.connectionType, client.staticIp, ...(client.locations || [])]
+    .join(" ").toLowerCase().includes(normalizedQuery));
+
+  function choose(clientId) {
+    onChange(clientId);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return <label>Client
+    <input
+      aria-autocomplete="list"
+      aria-expanded={open}
+      autoComplete="off"
+      onBlur={() => setTimeout(() => setOpen(false), 150)}
+      onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+      onFocus={() => setOpen(true)}
+      placeholder={selected ? selected.name : "Search registered clients"}
+      value={query}
+    />
+    {open && <div className="client-picker-options" role="listbox">
+      {allowNewClient && <button type="button" className="client-picker-option" onMouseDown={(event) => event.preventDefault()} onClick={() => choose("new")}>Add New Client</button>}
+      {matches.map((client) => <button type="button" className="client-picker-option" key={client.id} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(client.id)}>
+        <strong>{client.name}</strong>
+        <small>{[client.contact, client.email, client.plans, client.street, client.siteLocation].filter(Boolean).join(" · ")}</small>
+      </button>)}
+      {!matches.length && <span className="client-picker-empty">No matching client.</span>}
+    </div>}
+    {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
+  </label>;
+}
+
 function ClientFields({ clients, form, setForm, allowNewClient = false }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
   const isNewClient = allowNewClient && form.clientId === "new";
@@ -1417,14 +1474,7 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
 
   return (
     <>
-      <label>Client
-        <select required value={form.clientId} onChange={(event) => selectClient(event.target.value)}>
-          {allowNewClient && <option value="new">Add New Client</option>}
-          {!allowNewClient && <option value="">Select a registered client</option>}
-          {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-        </select>
-        {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
-      </label>
+      <ClientPicker clients={clients} value={form.clientId} onChange={selectClient} allowNewClient={allowNewClient} />
       {isNewClient && <label>Client Name<input required value={form.clientName} onChange={(event) => setForm({ ...form, clientName: event.target.value })} /></label>}
       <label>Location
         {selectedClient?.locations?.length ? (
