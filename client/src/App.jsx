@@ -190,6 +190,8 @@ function App() {
           <Doc1Form clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
         ) : view === "maintenance" ? (
           <MaintenanceForm clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "General Maintenance submitted to HOD.")} />
+        ) : view === "survey" ? (
+          <SurveyRequestForm clients={clients} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createSurvey(user, payload), "Site survey request submitted to Engineer.")} />
         ) : view === "clients" ? (
           <ClientsPage clients={clients} onRegister={registerClient} />
         ) : view === "users" && ["System Admin", "Management"].includes(user.role) ? (
@@ -212,6 +214,7 @@ function App() {
             onOpen={setSelectedId}
             onCreateDoc1={() => navigate("doc1")}
             onCreateMaintenance={() => navigate("maintenance")}
+            onCreateSurvey={() => navigate("survey")}
           />
         )}
       </main>
@@ -318,6 +321,16 @@ function MaintenanceForm({ clients, pricing, onSubmit, onCancel }) {
   );
 }
 
+function SurveyRequestForm({ clients, onSubmit, onCancel }) {
+  const [form, setForm] = useState({ clientId: "new", clientName: "", countryIso: "TZ", location: "", contact: "", email: "", package: subscriptionPackages[0] || "" });
+  return <FormShell title="Request Site Survey" subtitle="Sales starts the request; Engineer performs the survey." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Engineer">
+    <div className="form-grid">
+      <ClientFields clients={clients} form={form} setForm={setForm} allowNewClient />
+      <label>Package Needed<select required value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })}>{subscriptionPackages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+    </div>
+  </FormShell>;
+}
+
 function FormShell({ title, subtitle, children, submitLabel, onSubmit, onCancel }) {
   return (
     <>
@@ -377,6 +390,10 @@ function DocumentDetail({ user, doc, onBack, run }) {
         <CompletedEngineerDocuments user={user} doc={doc} />
       ) : maintenanceCompleted ? (
         <MaintenanceCertificate user={user} doc={doc} />
+      ) : doc.type === "survey" && doc.status === "Completed" ? (
+        <SurveyActions user={user} doc={doc} run={run} />
+      ) : doc.type === "survey" ? (
+        <><section className="panel"><div className="section-title"><h2>Site Survey Workflow</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div><div className="form-grid"><p><strong>Current Department</strong><br />{doc.currentDepartment}</p><p><strong>Requested Package</strong><br />{doc.service}</p></div></section><SurveyActions user={user} doc={doc} run={run} /><History doc={doc} /></>
       ) : (
         <>
           <section className="panel"><div className="section-title"><h2>Workflow State</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div><div className="form-grid"><p><strong>Current Department</strong><br />{doc.currentDepartment}</p><p><strong>Location</strong><br />{doc.location}</p></div></section>
@@ -620,6 +637,7 @@ function PaperCheck({ label, active = false }) {
 
 function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
   const isMaintenance = doc.type === "maintenance";
+  const isSurvey = doc.type === "survey";
   const historyEntry = (...actions) => [...(doc.history || [])].reverse().find((entry) => actions.includes(entry.action));
   const historyActionAt = (...actions) => historyEntry(...actions)?.at;
   const historyActor = (...actions) => {
@@ -632,7 +650,14 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
       ["Reviewed by HOD", actorName(doc.hod?.approvedByName, doc.hod?.approvedBy, historyActor("HOD approved General Maintenance")), doc.hod?.approvedByRole || "HOD", doc.hod?.approvedAt || historyActionAt("HOD approved General Maintenance")],
       ["Reviewed by Accounts", actorName(doc.accounts?.processedByName, doc.accounts?.processedBy, historyActor("General Maintenance equipment reviewed")), doc.accounts?.processedByRole || "Accounts", doc.accounts?.processedAt || historyActionAt("General Maintenance equipment reviewed")],
     ]
-    : [
+    : isSurvey ? [
+      ["Requested by", actorName(doc.sales?.submittedByName || doc.createdByName, doc.sales?.submittedBy || doc.createdBy, "Not recorded"), doc.sales?.submittedByRole || doc.createdByRole || "Sales", doc.createdAt],
+      ["Surveyed by", actorName(doc.engineer?.submittedByName, doc.engineer?.submittedBy, "Not recorded"), doc.engineer?.submittedByRole || "Engineer", doc.engineer?.submittedAt],
+      ["Payment confirmed by", actorName(doc.hoc?.reviewedByName, doc.hoc?.reviewedBy, "Not recorded"), doc.hoc?.reviewedByRole || "HOC", doc.hoc?.reviewedAt],
+      ["Billed by", actorName(doc.accounts?.processedByName, doc.accounts?.processedBy, "Not recorded"), doc.accounts?.processedByRole || "Accounts", doc.accounts?.processedAt],
+      ["Issued by", actorName(doc.store?.approvedByName, doc.store?.approvedBy, "Not recorded"), doc.store?.approvedByRole || "Store", doc.store?.approvedAt],
+      ["Approved by", actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Pending Management"), doc.management?.approvedByRole || "Management", doc.management?.approvedAt],
+    ] : [
       ["Requested by", actorName(doc.createdByName || doc.engineer?.submittedByName, doc.createdBy, "Not recorded"), doc.createdByRole || "Engineer", doc.createdAt],
       [
         "Costed by",
@@ -648,7 +673,7 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
     ];
   return (
     <article id={printId} className={`paper-form ${extraClass}`}>
-      <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>{isMaintenance ? "General Maintenance No." : "Install Requisition No."} {doc.number}</p></div></header>
+      <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>{isMaintenance ? "General Maintenance No." : isSurvey ? "Survey Requisition No." : "Install Requisition No."} {doc.number}</p></div></header>
       <table className="paper-table">
         <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
         <tbody>
@@ -657,7 +682,7 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
           ))}
         </tbody>
       </table>
-      <div className="narration"><strong>Narration</strong><p>{doc.engineer?.notes || "-"}</p></div>
+      <div className="narration"><strong>Narration</strong><p>{isSurvey ? doc.engineer?.comments || "-" : doc.engineer?.notes || "-"}</p></div>
       <div className="signature-grid">
         {people.map(([label, name, position, at]) => <Signature key={label} label={label} name={name} position={position} at={at} />)}
       </div>
@@ -706,6 +731,106 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
       </div>
     </article>
   );
+}
+
+function SurveyActions({ user, doc, run }) {
+  const engineerOpen = canAct(user, "Engineer") && ["Pending Engineer", "On Hold"].includes(doc.status);
+  const hocOpen = canAct(user, "HOC") && doc.status === "Pending HOC";
+  const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
+  const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
+  const managementOpen = canAct(user, "Management") && doc.status === "Pending Management";
+  const [engineer, setEngineer] = useState({ connectionType: doc.engineer?.connectionType || "fibre", distance: doc.engineer?.distance || "", node: doc.engineer?.node || "", comments: doc.engineer?.comments || "", proceed: doc.engineer?.proceed === false ? "no" : "yes", clientFeedback: doc.engineer?.clientFeedback || "", currency: doc.engineer?.currency || "TZS", items: doc.engineer?.items?.length ? doc.engineer.items : [{ ...emptyItem }] });
+  const [paymentConfirmation, setPaymentConfirmation] = useState(null);
+  const [hocRemarks, setHocRemarks] = useState(doc.hoc?.remarks || "");
+  const surveyEquipment = doc.sales?.equipment?.length ? doc.sales.equipment : (doc.engineer?.items || []);
+  const surveyEquipmentTotal = surveyEquipment.reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0);
+  const [accounts, setAccounts] = useState({ billingAmount: doc.accounts?.billingAmount || surveyEquipmentTotal || "", invoiceNumber: doc.accounts?.invoiceNumber || "", remarks: doc.accounts?.remarks || "" });
+  const [items, setItems] = useState((doc.store?.items || []).map((item) => ({ ...item, issuedQty: item.issuedQty || item.requestedQty })));
+  const [storeRemarks, setStoreRemarks] = useState(doc.store?.remarks || "");
+  const [managementRemarks, setManagementRemarks] = useState(doc.management?.remarks || "");
+  const canPrint = Boolean(doc.survey);
+  const surveyResultPrintId = `survey-result-print-${doc.id}`;
+  const stockPrintId = `survey-stock-print-${doc.id}`;
+  const workOrderPrintId = `survey-work-order-print-${doc.id}`;
+  const paymentConfirmationPrintId = `survey-payment-confirmation-print-${doc.id}`;
+  const surveyDocumentPrintIds = doc.paymentConfirmation?.dataUrl ? [surveyResultPrintId, stockPrintId, workOrderPrintId, paymentConfirmationPrintId] : [surveyResultPrintId, stockPrintId, workOrderPrintId];
+  const completedSurvey = doc.status === "Completed";
+  const showDocumentPack = doc.status === "Pending Management" || completedSurvey;
+  const postStoreReview = ["Pending Management", "Completed"].includes(doc.status);
+  const managementViewer = ["Management", "System Admin"].includes(user.role);
+  const engineerUser = user.role === "Engineer" || user.department === "Engineer";
+  const speedTestOpen = engineerUser && doc.status === "Pending Management";
+  const [speedTest, setSpeedTest] = useState(doc.engineer?.speedTest || "");
+  return <>
+    {speedTestOpen && <ActionPanel title="Work Order Speed Test" enabled initiallyEditing actionLabel="Save Speed Test" onAction={() => run(() => api.surveySpeedTest(user, doc.id, { speedTest }), "Speed test recorded on the work order.")}><label>Speed Test Obtained<input required value={speedTest} onChange={(event) => setSpeedTest(event.target.value)} /></label></ActionPanel>}
+    {canPrint && <section className="panel"><div className="section-title"><h2>Survey Documents</h2><span>{showDocumentPack ? "Ready for Management review" : "Available before Management approval"}</span></div><div className="button-row">{(canAct(user, "Engineer") || canAct(user, "HOC")) && <button className="btn" type="button" onClick={() => printElementById(surveyResultPrintId)}>Print Survey Result</button>}<button className="btn secondary" type="button" onClick={() => printElementById(stockPrintId)}>Print Stock Requisition</button><button className="btn secondary" type="button" onClick={() => printElementById(workOrderPrintId)}>Print Work Order</button><button className="btn" type="button" onClick={() => printElementsByIds(surveyDocumentPrintIds)}>Print All</button></div><div className={showDocumentPack ? "document-preview-grid" : ""}><SurveyResultPreview doc={doc} printId={surveyResultPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><StockRequisitionPreview doc={doc} printId={stockPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><WorkOrderPreview doc={doc} printId={workOrderPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />{doc.paymentConfirmation?.dataUrl && <PaymentConfirmationPreview doc={doc} printId={paymentConfirmationPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />}</div></section>}
+    {!completedSurvey && canAct(user, "Engineer") && (!postStoreReview || managementViewer) && <ActionPanel title="Engineer Site Survey" enabled={engineerOpen} initiallyEditing={engineerOpen} actionLabel="Submit Survey Result" onAction={() => run(() => api.surveyEngineer(user, doc.id, engineer), engineer.proceed === "no" ? "Survey placed on hold." : "Survey result submitted to HOC.")}>
+      <div className="form-grid"><label>Connection Type<select value={engineer.connectionType} onChange={(event) => setEngineer({ ...engineer, connectionType: event.target.value })}><option value="fibre">Fibre</option><option value="wireless">Radiowaves (Wireless)</option></select></label>{engineer.connectionType === "fibre" && <label>Distance<input required value={engineer.distance} onChange={(event) => setEngineer({ ...engineer, distance: event.target.value })} /></label>}<label>Node<input required value={engineer.node} onChange={(event) => setEngineer({ ...engineer, node: event.target.value })} /></label><label>Currency<select value={engineer.currency} onChange={(event) => setEngineer({ ...engineer, currency: event.target.value })}><option>TZS</option><option>USD</option></select></label><label>Proceed?<select value={engineer.proceed} onChange={(event) => setEngineer({ ...engineer, proceed: event.target.value })}><option value="yes">Yes</option><option value="no">No</option></select></label><label className="wide">Comments<textarea required value={engineer.comments} onChange={(event) => setEngineer({ ...engineer, comments: event.target.value })} /></label><label>Client Feedback<input required value={engineer.clientFeedback} onChange={(event) => setEngineer({ ...engineer, clientFeedback: event.target.value })} /></label></div>
+      <ItemEditor items={engineer.items} setItems={(items) => setEngineer({ ...engineer, items })} engineerRequest currency={engineer.currency} />
+    </ActionPanel>}
+    {!completedSurvey && canAct(user, "HOC") && (!postStoreReview || managementViewer) && <ActionPanel title="HOC Survey Review & Payment Confirmation" enabled={hocOpen} initiallyEditing={hocOpen} actionLabel="Confirm Payment to Accounts" onAction={() => run(() => api.surveyHoc(user, doc.id, { paid: true, paymentConfirmation, remarks: hocRemarks }), "Payment confirmed and sent to Accounts.")}>
+      <div className="form-grid">
+        <p><strong>Client Name</strong><br />{doc.clientName}</p><p><strong>Location</strong><br />{doc.location}</p>
+        <p><strong>Mobile Number</strong><br />{doc.contact}</p><p><strong>Package Needed</strong><br />{doc.service}</p>
+        <p><strong>Connection Type</strong><br />{doc.engineer?.connectionType === "wireless" ? "Radiowaves (Wireless)" : doc.engineer?.connectionType || "-"}</p><p><strong>Node</strong><br />{doc.engineer?.node || "-"}</p>
+        {doc.engineer?.connectionType === "fibre" && <p><strong>Distance</strong><br />{doc.engineer?.distance || "-"}</p>}
+        <p><strong>Engineer Comments</strong><br />{doc.engineer?.comments || "-"}</p><p><strong>Client Feedback</strong><br />{doc.engineer?.clientFeedback || "-"}</p>
+      </div>
+      <EquipmentCostEditor items={doc.engineer?.items || []} locked currency={doc.engineer?.currency || "TZS"} />
+      <div className="equipment-total-bar sales-total-bar"><strong>Total Equipment Cost</strong><span>{money((doc.engineer?.items || []).reduce((total, item) => total + Number(item.requestedQty || 0) * Number(item.unitCost || 0), 0), doc.engineer?.currency || "TZS")}</span></div>
+      <p><strong>Confirm that the client has paid.</strong></p><ConfirmationUpload value={paymentConfirmation} onChange={setPaymentConfirmation} owner="HOC" />
+      <label>HOC Comments<textarea required value={hocRemarks} onChange={(event) => setHocRemarks(event.target.value)} /></label>
+    </ActionPanel>}
+    {!completedSurvey && canAct(user, "Accounts") && (!postStoreReview || managementViewer) && <ActionPanel title="Accounts Section" enabled={accountsOpen} initiallyEditing={accountsOpen} actionLabel="Submit to Store" onAction={() => run(() => api.accounts(user, doc.id, accounts), "Submitted to Store.")}><div className="form-grid"><label>Client Name<input readOnly value={doc.clientName} /></label><label>Location<input readOnly value={doc.location} /></label><label>Equipment Cost<input readOnly value={money(surveyEquipmentTotal, doc.engineer?.currency || "TZS")} /></label><label>Total Cost Required<input readOnly value={money(surveyEquipmentTotal, doc.engineer?.currency || "TZS")} /></label></div><EquipmentCostEditor items={surveyEquipment} locked currency={doc.engineer?.currency || "TZS"} /><div className="equipment-total-bar sales-total-bar"><strong>Total Cost Required</strong><span>{money(surveyEquipmentTotal, doc.engineer?.currency || "TZS")}</span></div><div className="form-grid">{numberInput("Billing Amount", "billingAmount", accounts, setAccounts, !accountsOpen)}{textInput("Invoice Number", "invoiceNumber", accounts, setAccounts, !accountsOpen, false)}<label className="wide">Remarks<textarea required value={accounts.remarks} onChange={(event) => setAccounts({ ...accounts, remarks: event.target.value })} /></label></div></ActionPanel>}
+    {!completedSurvey && canAct(user, "Store") && (!postStoreReview || managementViewer) && <ActionPanel title="Store Section" enabled={storeOpen} initiallyEditing={storeOpen} actionLabel="Confirm Stock and Validate" onAction={() => run(() => api.store(user, doc.id, { remarks: storeRemarks, items }), "Store validation complete.")}><div className="form-grid"><p><strong>Total Equipment Cost</strong><br />{money(surveyEquipmentTotal, doc.engineer?.currency || "TZS")}</p><p><strong>Accounts Billing</strong><br />{money(doc.accounts?.billingAmount, doc.accounts?.currency || doc.engineer?.currency || "TZS")}</p></div><ItemEditor items={items} setItems={setItems} locked={!storeOpen} storeMode /><label>Store Remarks<textarea value={storeRemarks} onChange={(event) => setStoreRemarks(event.target.value)} /></label></ActionPanel>}
+    {!completedSurvey && canAct(user, "Management") && <ActionPanel title="Management Approval" enabled={managementOpen} initiallyEditing={managementOpen} actionLabel="Approve and Complete" onAction={() => run(() => api.management(user, doc.id, { remarks: managementRemarks }), "Survey workflow completed.")}><label>Approval Notes<textarea value={managementRemarks} onChange={(event) => setManagementRemarks(event.target.value)} /></label></ActionPanel>}
+  </>;
+}
+
+function SurveyResultPreview({ doc, printId, extraClass = "" }) {
+  const survey = doc.survey || {};
+  const engineer = doc.engineer || {};
+  return <article id={printId} className={`paper-form ${extraClass}`}>
+    <header className="paper-head"><span className="paper-logo">zanlink</span><div><h2>Site Survey Result</h2><p>Survey Result No. {survey.resultNumber || doc.number}</p></div></header>
+    <div className="paper-fields two">
+      <Field label="Survey Request No." value={doc.number} /><Field label="Client Name" value={doc.clientName} />
+      <Field label="Location" value={doc.location} /><Field label="Mobile Number" value={doc.contact} />
+      <Field label="Package Needed" value={doc.service} /><Field label="Connection Type" value={engineer.connectionType === "wireless" ? "Radiowaves (Wireless)" : engineer.connectionType} />
+      <Field label="Distance" value={engineer.connectionType === "fibre" ? engineer.distance : "N/A"} /><Field label="Node" value={engineer.node} />
+      <Field label="Proceed with Installation" value={engineer.proceed ? "Yes" : "No"} /><Field label="Surveyed By" value={engineer.submittedByName} />
+      <Field label="Comments" value={engineer.comments} />
+    </div>
+  </article>;
+}
+
+function WorkOrderPreview({ doc, printId, extraClass = "" }) {
+  const survey = doc.survey || {};
+  const engineer = doc.engineer || {};
+  return <article id={printId} className={`paper-form ${extraClass}`}>
+    <header className="paper-head"><span className="paper-logo">zanlink</span><div><h2>Work Order Form</h2><p>Survey Request No. {doc.number}</p></div></header>
+    <div className="paper-fields two">
+      <Field label="Survey Request No." value={doc.number} /><Field label="Survey Result Form No." value={survey.resultNumber} />
+      <Field label="Client Name" value={doc.clientName} /><Field label="Location" value={doc.location} />
+      <Field label="Mobile Number" value={doc.contact} /><Field label="Package Needed" value={doc.service} />
+      <Field label="Client Feedback" value={engineer.clientFeedback} /><Field label="Speed Test Obtained" value={engineer.speedTest || "Not recorded"} />
+      <Field label="Client Confirmation" value={doc.paymentConfirmation ? "Uploaded" : "Not uploaded"} /><Field label="Connection Type" value={engineer.connectionType === "wireless" ? "Radiowaves (Wireless)" : engineer.connectionType} />
+    </div>
+    <h3>Payment Summary</h3>
+    <div className="paper-fields two">
+      <Field label="Invoice Number" value={doc.accounts?.invoiceNumber || "-"} /><Field label="Payment Confirmed" value={doc.hoc?.paid ? "Yes" : "No"} />
+      <Field label="Billing Amount" value={money(doc.accounts?.billingAmount, doc.accounts?.currency || engineer.currency || "TZS")} /><Field label="Confirmed By" value={doc.hoc?.reviewedByName || "-"} />
+    </div>
+  </article>;
+}
+
+function PaymentConfirmationPreview({ doc, printId, extraClass = "" }) {
+  const confirmation = doc.paymentConfirmation;
+  if (!confirmation?.dataUrl) return null;
+  return <article id={printId} className={`paper-form printed-confirmation ${extraClass}`}>
+    <header className="paper-head"><span className="paper-logo">zanlink</span><div><h2>Client Payment Confirmation</h2><p>Survey Request No. {doc.number}</p></div></header>
+    <div className="paper-fields two"><Field label="Client Name" value={doc.clientName} /><Field label="Confirmed By" value={confirmation.uploadedByName || doc.hoc?.reviewedByName} /><Field label="File" value={confirmation.name} /><Field label="Confirmed At" value={confirmation.uploadedAt ? formatDate(confirmation.uploadedAt) : "-"} /></div>
+    <img src={confirmation.dataUrl} alt="Client payment confirmation" />
+  </article>;
 }
 
 function Doc1Actions({ user, doc, run }) {
@@ -1244,12 +1369,17 @@ function formatContactNumber(countryIso, number) {
   return `${selectedCountry[2]} ${trimmedNumber}`;
 }
 
-function ClientFields({ clients, form, setForm }) {
+function ClientFields({ clients, form, setForm, allowNewClient = false }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
+  const isNewClient = allowNewClient && form.clientId === "new";
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const contactParts = splitContactNumber(form.contact, form.countryIso);
 
   function selectClient(clientId) {
+    if (allowNewClient && clientId === "new") {
+      setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", contact: "", email: "", location: "" });
+      return;
+    }
     const client = clients.find((item) => item.id === clientId);
     const clientContact = splitContactNumber(client?.contact || "", "TZ");
     const location = client?.locations?.[0] || "";
@@ -1275,11 +1405,13 @@ function ClientFields({ clients, form, setForm }) {
     <>
       <label>Client
         <select required value={form.clientId} onChange={(event) => selectClient(event.target.value)}>
-          <option value="">Select a registered client</option>
+          {allowNewClient && <option value="new">Add New Client</option>}
+          {!allowNewClient && <option value="">Select a registered client</option>}
           {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
         </select>
         {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
       </label>
+      {isNewClient && <label>Client Name<input required value={form.clientName} onChange={(event) => setForm({ ...form, clientName: event.target.value })} /></label>}
       <label>Location
         {selectedClient?.locations?.length ? (
           <select required value={form.location} onChange={(event) => updateLocation(event.target.value)}>
@@ -1319,7 +1451,7 @@ function ClientFields({ clients, form, setForm }) {
           />
         </div>
       </label>
-      <label>Email<input readOnly value={form.email} /></label>
+      {isNewClient ? <label>Email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label> : <label>Email<input readOnly value={form.email} /></label>}
     </>
   );
 }

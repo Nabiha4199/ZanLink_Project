@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { canCreate, statusClass } from "../utils/permissions";
+import { canCreate, canCreateSurvey, statusClass } from "../utils/permissions";
 
-export default function DashboardPage({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance }) {
+export default function DashboardPage({ user, documents, filters, setFilters, onOpen, onCreateDoc1, onCreateMaintenance, onCreateSurvey }) {
   const [workflowDoc, setWorkflowDoc] = useState(null);
   const [statFilter, setStatFilter] = useState("all");
   const stats = useMemo(() => [
@@ -25,6 +25,7 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
         <div className="toolbar">
           {canCreate(user) && <button className="btn" onClick={onCreateDoc1}>New Onboarding</button>}
           {canCreate(user) && <button className="btn secondary" onClick={onCreateMaintenance}>New General Maintenance</button>}
+          {canCreateSurvey(user) && <button className="btn secondary" onClick={onCreateSurvey}>Site Survey Request</button>}
         </div>
       </div>
       <section className="stats dashboard-stats" data-tour="stats">{stats.map(([key, label, value, icon]) => (
@@ -41,9 +42,8 @@ export default function DashboardPage({ user, documents, filters, setFilters, on
       <section className="panel filters" data-tour="documents">
         <div className="filter-heading"><div><strong>{activeStatLabel}</strong><span>Find and process work assigned to your role</span></div></div>
         <input placeholder="Search number, client, status, department" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} />
-        <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">General Maintenance</option></select>
-        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Sales", "Returned to Sales", "Pending Client Confirmation", "Pending HOC", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
-        <select value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })}><option value="">All departments</option>{["Engineer", "Sales", "HOC", "Accounts", "Store", "Management", "HOD"].map((department) => <option key={department}>{department}</option>)}</select>
+        <select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">All types</option><option value="doc1">Document 1</option><option value="maintenance">General Maintenance</option><option value="survey">Site Survey</option></select>
+        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">All statuses</option>{["Pending Engineer", "On Hold", "Pending Sales", "Returned to Sales", "Pending Client Confirmation", "Pending HOC", "Pending Accounts", "Pending Store", "Pending Management", "Pending HOD", "Completed"].map((status) => <option key={status}>{status}</option>)}</select>
       </section>
       <DocumentTable user={user} documents={visibleDocuments} onOpen={onOpen} onShowWorkflow={setWorkflowDoc} />
       {workflowDoc && <WorkflowModal doc={workflowDoc} onClose={() => setWorkflowDoc(null)} />}
@@ -62,7 +62,7 @@ function DocumentTable({ user, documents, onOpen, onShowWorkflow }) {
             return (
               <tr key={doc.id}>
                 <td data-label="Number"><strong>{doc.number}</strong></td>
-                <td data-label="Type">{doc.type === "doc1" ? "Onboarding & Stock" : "General Maintenance"}</td>
+                <td data-label="Type">{doc.type === "doc1" ? "Onboarding & Stock" : doc.type === "survey" ? "Site Survey" : "General Maintenance"}</td>
                 <td data-label="Client">{doc.clientName}<br /><small>{doc.location}</small></td>
                 <td data-label="Status"><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></td>
                 <td data-label="Current Department">{doc.currentDepartment}</td>
@@ -104,6 +104,8 @@ function WorkflowTracker({ doc }) {
     ["Engineer Section", null],
     ["HOD Approval", "Pending HOD"],
     ["Accounts Section", "Pending Accounts"],
+  ] : type === "survey" ? [
+    ["Sales Request", null], ["Engineer Survey", "Pending Engineer"], ["HOC Payment Confirmation", "Pending HOC"], ["Accounts Billing", "Pending Accounts"], ["Store", "Pending Store"], ["Management", "Pending Management"],
   ] : [
     ["Engineer Section", null],
     ["Sales Section", "Pending Sales"],

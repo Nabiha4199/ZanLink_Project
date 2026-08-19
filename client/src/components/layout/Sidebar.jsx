@@ -1,6 +1,6 @@
 import React from "react";
 import zanlinkLogo from "../../assets/zanlink-logo.png";
-import { canCreate } from "../../utils/permissions";
+import { canCreate, canCreateSurvey } from "../../utils/permissions";
 
 const icons = {
   dashboard: (
@@ -105,6 +105,7 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onStartTour 
         <button className={view === "clients" ? "active" : ""} onClick={() => onNavigate("clients")}><NavIcon name="clients" />Clients</button>
         {canCreate(user) && <button data-tour="create" className={view === "doc1" ? "active" : ""} onClick={() => onNavigate("doc1")}><NavIcon name="onboarding" />New Onboarding</button>}
         {canCreate(user) && <button className={view === "maintenance" ? "active" : ""} onClick={() => onNavigate("maintenance")}><NavIcon name="maintenance" />General Maintenance</button>}
+        {canCreateSurvey(user) && <button className={view === "survey" ? "active" : ""} onClick={() => onNavigate("survey")}><NavIcon name="onboarding" />Site Survey Request</button>}
         {["System Admin", "Management"].includes(user.role) && <button data-tour="summaries" className={view === "summaries" ? "active" : ""} onClick={() => onNavigate("summaries")}><NavIcon name="summaries" />Delivery Note</button>}
         <button data-tour="reports" className={view === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><NavIcon name="reports" />Reports</button>
         {["System Admin", "Management"].includes(user.role) && <button className={view === "users" ? "active" : ""} onClick={() => onNavigate("users")}><NavIcon name="users" />User Management</button>}

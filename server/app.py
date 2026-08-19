@@ -66,7 +66,7 @@ EMAIL_PATTERN = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]
 USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
 MONTHLY_NUMBER_PATTERN = re.compile(r"^(?:(?P<label>Zanlink)/)?(?P<year>\d{4})/(?P<month>\d{2})/(?:(?P<prefix>[A-Z]+)-)?(?P<value>\d{4,6})$")
-DOCUMENT_NUMBER_PREFIXES = {"doc1": "ONB", "maintenance": "MNT"}
+DOCUMENT_NUMBER_PREFIXES = {"doc1": "ONB", "maintenance": "MNT", "survey": "SUR"}
 DEFAULT_ITEM_PRICES = [
     {"id": "ITM-019", "description": "D Link Switch 16 Port", "unitCostUsd": 69}, {"id": "ITM-020", "description": "D Link Switch 24 Ports", "unitCostUsd": 0},
     {"id": "ITM-021", "description": "D Link Switch 8 Ports", "unitCostUsd": 18}, {"id": "ITM-022", "description": "Extension Plugs", "unitCostUsd": 20},
@@ -951,6 +951,7 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     width, height = A4
     draw_header(pdf, "STOCK REQUISITION FORM", doc)
     is_maintenance = doc.get("type") == "maintenance"
+    is_survey = doc.get("type") == "survey"
     engineer_name = doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or user_display_name(doc.get("createdBy"), "Engineer")
     accounts_name = doc.get("accounts", {}).get("processedByName") or user_display_name(doc.get("accounts", {}).get("processedBy"), "Accounts")
     store_name = doc.get("store", {}).get("approvedByName") or user_display_name(doc.get("store", {}).get("approvedBy"), "Store")
@@ -958,7 +959,7 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf.drawRightString(
         width - 22 * mm,
         height - 42 * mm,
-        f"{'General Maintenance No.' if is_maintenance else 'Install Requisition No.'} {doc['number']}",
+        f"{'General Maintenance No.' if is_maintenance else 'Survey Requisition No.' if is_survey else 'Install Requisition No.'} {doc['number']}",
     )
 
     rows = [["S/N", "ITEM ID", "DESCRIPTION", "QUANTITY REQUESTED", "QUANTITY ISSUED"]]
@@ -995,7 +996,7 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     pdf.drawString(22 * mm, y + 12, "Narration")
     pdf.rect(22 * mm, y - 20, 166 * mm, 30, stroke=1, fill=0)
     pdf.setFont("Helvetica", 10)
-    pdf.drawString(26 * mm, y - 4, doc.get("engineer", {}).get("notes") or "-")
+    pdf.drawString(26 * mm, y - 4, (doc.get("engineer", {}).get("comments") if is_survey else doc.get("engineer", {}).get("notes")) or "-")
 
     costed_name = (
         doc.get("sales", {}).get("submittedByName")
@@ -1018,6 +1019,15 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
                 doc.get("accounts", {}).get("processedByRole", "Accounts"),
                 doc.get("accounts", {}).get("processedAt") or history_action_at(doc, "General Maintenance equipment reviewed"),
             ),
+        ]
+    elif is_survey:
+        signature_rows = [
+            ("Requested by", doc.get("sales", {}).get("submittedByName", "Not recorded"), doc.get("sales", {}).get("submittedByRole", "Sales"), doc.get("createdAt")),
+            ("Surveyed by", doc.get("engineer", {}).get("submittedByName", "Not recorded"), doc.get("engineer", {}).get("submittedByRole", "Engineer"), doc.get("engineer", {}).get("submittedAt")),
+            ("Payment confirmed by", doc.get("hoc", {}).get("reviewedByName", "Not recorded"), doc.get("hoc", {}).get("reviewedByRole", "HOC"), doc.get("hoc", {}).get("reviewedAt")),
+            ("Billed by", accounts_name, doc.get("accounts", {}).get("processedByRole", "Accounts"), doc.get("accounts", {}).get("processedAt")),
+            ("Issued by", store_name, doc.get("store", {}).get("approvedByRole", "Store"), doc.get("store", {}).get("approvedAt")),
+            ("Approved by", doc.get("management", {}).get("approvedByName", "Pending Management"), doc.get("management", {}).get("approvedByRole", "Management"), doc.get("management", {}).get("approvedAt")),
         ]
     else:
         signature_rows = [
@@ -1046,6 +1056,57 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
 
     pdf.showPage()
     pdf.save()
+    return buffer
+
+
+def build_survey_result_pdf(doc: dict) -> BytesIO:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    draw_header(pdf, "SITE SURVEY RESULT", doc)
+    survey = doc.get("survey", {})
+    engineer = doc.get("engineer", {})
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawRightString(width - 22 * mm, height - 42 * mm, f"Survey Result No. {survey.get('resultNumber') or doc['number']}")
+    y = height - 60 * mm
+    fields = [
+        ("Survey Request No.", doc["number"]), ("Client Name", doc.get("clientName")),
+        ("Location", doc.get("location")), ("Mobile Number", doc.get("contact")),
+        ("Package Needed", doc.get("service")), ("Connection Type", engineer.get("connectionType")),
+        ("Distance", engineer.get("distance") if engineer.get("connectionType") == "fibre" else "N/A"),
+        ("Node", engineer.get("node")), ("Survey Comments", engineer.get("comments")),
+        ("Proceed with Installation", "Yes" if engineer.get("proceed") else "No"),
+    ]
+    for index, (label, value) in enumerate(fields):
+        x = 22 * mm if index % 2 == 0 else 108 * mm
+        if index and index % 2 == 0:
+            y -= 20 * mm
+        draw_label_value(pdf, label, value or "-", x, y, 76 * mm)
+    pdf.showPage(); pdf.save()
+    return buffer
+
+
+def build_work_order_pdf(doc: dict) -> BytesIO:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    draw_header(pdf, "WORK ORDER FORM", doc)
+    survey, engineer = doc.get("survey", {}), doc.get("engineer", {})
+    y = height - 58 * mm
+    fields = [
+        ("Survey Request No.", doc["number"]), ("Survey Result Form No.", survey.get("resultNumber") or "-"),
+        ("Client Name", doc.get("clientName")), ("Location", doc.get("location")),
+        ("Mobile Number", doc.get("contact")), ("Package Needed", doc.get("service")),
+        ("Client Feedback", engineer.get("clientFeedback")), ("Speed Test Obtained", engineer.get("speedTest")),
+        ("Client Confirmation", "Uploaded" if doc.get("paymentConfirmation") else "Not uploaded"),
+        ("Connection Type", engineer.get("connectionType")),
+    ]
+    for index, (label, value) in enumerate(fields):
+        x = 22 * mm if index % 2 == 0 else 108 * mm
+        if index and index % 2 == 0:
+            y -= 20 * mm
+        draw_label_value(pdf, label, value or "-", x, y, 76 * mm)
+    pdf.showPage(); pdf.save()
     return buffer
 
 
@@ -1702,6 +1763,117 @@ def create_maintenance():
     return jsonify(doc), 201
 
 
+@app.post("/api/documents/survey")
+def create_survey():
+    user = current_user()
+    if user["role"] not in {"System Admin", "Management"} and user.get("department") != "Sales" and user.get("role") != "Sales":
+        raise PermissionError("Only Sales and admin users can request a site survey")
+    payload = request.get_json(force=True)
+    package = require_text(payload, "package", "Package needed")
+    existing_client = find_client(str(payload.get("clientId") or ""))
+    if existing_client:
+        client_name = existing_client["name"]
+        contact = existing_client.get("contact") or require_text(payload, "contact", "Mobile number")
+        location = require_text(payload, "location", "Location")
+        if location not in existing_client.get("locations", []):
+            existing_client.setdefault("locations", []).append(location)
+    else:
+        client_name = require_text(payload, "clientName", "Client name")
+        contact = normalize_tanzania_contact(payload.get("contact"))
+        location = require_text(payload, "location", "Location")
+        email = normalize_email(payload.get("email"))
+        existing_client = next((client for client in STATE["clients"] if client.get("email", "").lower() == email and email), None)
+        if existing_client:
+            raise ValueError("A client with this email is already registered. Select the client from the list.")
+        existing_client = {"id": f"c-{uuid4()}", "name": client_name, "contact": contact, "email": email, "locations": [location], "geoLocations": [], "createdAt": now_iso()}
+        STATE["clients"].insert(0, existing_client)
+    doc = {
+        "id": str(uuid4()), "type": "survey", "number": next_number("survey"),
+        "clientId": existing_client["id"], "clientName": client_name,
+        "contact": contact, "location": location, "email": existing_client.get("email", ""),
+        "service": package, "status": "Pending Engineer", "currentDepartment": "Engineer",
+        "createdBy": user["id"], "createdByName": user["name"], "createdByRole": user["role"], "createdAt": now_iso(),
+        "sales": {"package": package, "submittedBy": user["id"], "submittedByName": user["name"], "submittedByRole": user["role"], "submittedAt": now_iso()},
+        "engineer": {}, "hoc": {}, "accounts": {}, "store": {"confirmed": False, "items": []}, "management": {},
+        "history": [history(user["id"], "Created site survey request", "Submitted to Engineer.", user["name"])],
+    }
+    STATE["documents"].insert(0, doc)
+    notify("Engineer", f"{doc['number']} is waiting for site survey.")
+    return jsonify(doc), 201
+
+
+@app.post("/api/documents/<document_id>/survey-engineer")
+def survey_engineer_submit(document_id: str):
+    user = current_user(); require_department(user, "Engineer")
+    doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    require_status(doc, "Pending Engineer", "On Hold")
+    payload = request.get_json(force=True)
+    connection_type = str(payload.get("connectionType") or "").lower()
+    if connection_type not in {"fibre", "wireless"}: raise ValueError("Connection type must be Fibre or Radiowaves (Wireless)")
+    proceed = str(payload.get("proceed") or "").lower()
+    if proceed not in {"yes", "no"}: raise ValueError("Select Yes or No for whether to proceed")
+    items = validate_items(payload.get("items", []), context="Survey equipment")
+    for item in items:
+        item["costCurrency"] = str(payload.get("currency") or "TZS").upper()
+    engineer = {
+        "connectionType": connection_type, "distance": require_text(payload, "distance", "Distance") if connection_type == "fibre" else "",
+        "node": require_text(payload, "node", "Node"), "comments": require_text(payload, "comments", "Comments", max_length=1000),
+        "proceed": proceed == "yes", "clientFeedback": require_text(payload, "clientFeedback", "Client feedback", max_length=1000),
+        "speedTest": "", "items": items,
+        "currency": str(payload.get("currency") or "TZS").upper(), "submittedBy": user["id"], "submittedByName": user["name"], "submittedByRole": user["role"], "submittedAt": now_iso(),
+    }
+    doc["engineer"] = engineer; doc["store"]["items"] = deepcopy(items)
+    equipment_total = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in items)
+    doc.setdefault("sales", {}).update({
+        "equipment": deepcopy(items), "packageCost": equipment_total, "laborCharge": 0,
+        "amount": equipment_total, "oneTimeTotal": equipment_total, "grandTotal": equipment_total,
+        "currency": engineer["currency"],
+    })
+    doc["survey"] = {"resultNumber": f"SR-{doc['number']}", "generatedAt": now_iso()}
+    if not engineer["proceed"]:
+        set_route(doc, "On Hold", "Engineer")
+        doc["history"].append(history(user["id"], "Survey placed on hold", engineer["comments"], user["name"]))
+    else:
+        set_route(doc, "Pending HOC", "HOC")
+        doc["history"].append(history(user["id"], "Survey completed", "Survey result generated and sent to HOC for payment confirmation.", user["name"]))
+        notify("HOC", f"{doc['number']} is waiting for payment confirmation.")
+    return jsonify(doc)
+
+
+@app.post("/api/documents/<document_id>/survey-speed-test")
+def survey_speed_test_submit(document_id: str):
+    user = current_user(); require_department(user, "Engineer")
+    doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    require_status(doc, "Pending Management")
+    speed_test = require_text(request.get_json(force=True), "speedTest", "Speed test obtained", max_length=500)
+    doc.setdefault("engineer", {})["speedTest"] = speed_test
+    doc["engineer"]["speedTestSubmittedBy"] = user["id"]
+    doc["engineer"]["speedTestSubmittedByName"] = user["name"]
+    doc["engineer"]["speedTestSubmittedAt"] = now_iso()
+    doc["history"].append(history(user["id"], "Speed test recorded", "Work order updated with the final speed test.", user["name"]))
+    return jsonify(doc)
+
+
+@app.post("/api/documents/<document_id>/survey-hoc")
+def survey_hoc_submit(document_id: str):
+    user = current_user(); require_department(user, "HOC")
+    doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    require_status(doc, "Pending HOC")
+    payload = request.get_json(force=True)
+    if not payload.get("paid"): raise ValueError("Confirm that the client has paid")
+    confirmation = require_confirmation_image({"clientConfirmation": payload.get("paymentConfirmation")})
+    confirmation.update({"uploadedBy": user["id"], "uploadedByName": user["name"], "uploadedAt": now_iso()})
+    doc["paymentConfirmation"] = confirmation
+    doc["hoc"] = {"paid": True, "reviewedBy": user["id"], "reviewedByName": user["name"], "reviewedByRole": user["role"], "reviewedAt": now_iso(), "remarks": require_text(payload, "remarks", "HOC comments", max_length=500)}
+    set_route(doc, "Pending Accounts", "Accounts")
+    doc["history"].append(history(user["id"], "HOC confirmed client payment", "Submitted to Accounts for billing.", user["name"]))
+    notify("Accounts", f"{doc['number']} payment was confirmed and is waiting for billing.")
+    return jsonify(doc)
+
+
 @app.post("/api/documents/<document_id>/sales")
 def sales_submit(document_id: str):
     user = current_user()
@@ -1838,6 +2010,22 @@ def accounts_submit(document_id: str):
         set_route(doc, "Completed", "Engineer")
         doc["history"].append(history(user["id"], "General Maintenance equipment reviewed", "Equipment used was submitted and the document returned to Engineer.", user["name"]))
         notify("Engineer", f"{doc['number']} General Maintenance equipment has been reviewed and the request is complete.")
+    elif doc["type"] == "survey":
+        billing_amount = require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=False)
+        doc["accounts"] = {
+            "billingAmount": billing_amount, "invoiceNumber": optional_text(payload, "invoiceNumber", max_length=120),
+            "remarks": require_text(payload, "remarks", "Remarks", max_length=500), "currency": doc.get("engineer", {}).get("currency") or "TZS",
+            "processedBy": user["id"], "processedByName": user["name"], "processedByRole": user["role"], "processedAt": now_iso(),
+        }
+        source_equipment = doc.get("sales", {}).get("equipment") or doc.get("engineer", {}).get("items", [])
+        equipment = validate_items(source_equipment, require_cost=True, context="Survey equipment")
+        doc["store"]["items"] = deepcopy(equipment)
+        doc.setdefault("sales", {})["equipment"] = deepcopy(equipment)
+        equipment_total = sum(float(item.get("requestedQty") or 0) * float(item.get("unitCost") or 0) for item in equipment)
+        doc["sales"].update({"packageCost": equipment_total, "laborCharge": 0, "amount": equipment_total, "oneTimeTotal": equipment_total, "grandTotal": equipment_total})
+        set_route(doc, "Pending Store", "Store")
+        doc["history"].append(history(user["id"], "Survey billing added", "Submitted to Store.", user["name"]))
+        notify("Store", f"{doc['number']} is waiting for stock validation.")
     else:
         billing_amount = require_number(payload, "billingAmount", "Billing amount", minimum=0, allow_zero=False)
         doc["accounts"] = {
@@ -1881,8 +2069,8 @@ def store_submit(document_id: str):
     user = current_user()
     require_department(user, "Store")
     doc = find_document(document_id)
-    if not doc or doc["type"] != "doc1":
-        raise ValueError("Document 1 not found")
+    if not doc or doc["type"] not in {"doc1", "survey"}:
+        raise ValueError("Workflow document not found")
     require_status(doc, "Pending Store")
     payload = request.get_json(force=True)
     items = deepcopy(doc.get("store", {}).get("items", []))
@@ -1931,8 +2119,8 @@ def management_submit(document_id: str):
     user = current_user()
     require_department(user, "Management")
     doc = find_document(document_id)
-    if not doc or doc["type"] != "doc1":
-        raise ValueError("Document 1 not found")
+    if not doc or doc["type"] not in {"doc1", "survey"}:
+        raise ValueError("Workflow document not found")
     require_status(doc, "Pending Management")
     payload = request.get_json(force=True)
     doc["management"] = {"approvedBy": user["id"], "approvedByName": user["name"], "approvedByRole": user["role"], "approvedAt": now_iso(), "remarks": optional_text(payload, "remarks")}
@@ -2010,6 +2198,33 @@ def download_maintenance_certificate(document_id: str):
         raise ValueError("The General Maintenance PDF is available only after completion")
     filename = f"{doc['clientName'].replace(' ', '_')}_general_maintenance.pdf"
     return pdf_response(build_maintenance_certificate_pdf(doc), filename)
+
+
+@app.get("/api/documents/<document_id>/downloads/survey-result")
+def download_survey_result(document_id: str):
+    user = current_user(); doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    ensure_document_access(user, doc)
+    if not doc.get("survey"): raise ValueError("Survey result is available after the Engineer submits the survey")
+    return pdf_response(build_survey_result_pdf(doc), f"{doc['clientName'].replace(' ', '_')}_survey_result.pdf")
+
+
+@app.get("/api/documents/<document_id>/downloads/work-order")
+def download_work_order(document_id: str):
+    user = current_user(); doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    ensure_document_access(user, doc)
+    if not doc.get("survey"): raise ValueError("Work order is available after the Engineer submits the survey")
+    return pdf_response(build_work_order_pdf(doc), f"{doc['clientName'].replace(' ', '_')}_work_order.pdf")
+
+
+@app.get("/api/documents/<document_id>/downloads/survey-stock-requisition")
+def download_survey_stock_requisition(document_id: str):
+    user = current_user(); doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    ensure_document_access(user, doc)
+    if not doc.get("survey"): raise ValueError("Stock requisition is available after the Engineer submits the survey")
+    return pdf_response(build_stock_requisition_pdf(doc), f"{doc['clientName'].replace(' ', '_')}_survey_stock_requisition.pdf")
 
 
 @app.get("/api/reports")
