@@ -1389,7 +1389,10 @@ def update_pricing():
             raise ValueError(f"Item {index} USD cost must be a number")
         if unit_cost_usd < 0:
             raise ValueError(f"Item {index} USD cost cannot be negative")
-        cleaned_items.append({"id": item_id, "description": description, "unitCostUsd": unit_cost_usd})
+        remarks = str(item.get("remarks") or ("On Demand" if unit_cost_usd == 0 else "OK")).strip()
+        if remarks not in {"OK", "On Demand"}:
+            raise ValueError(f"Item {index} remarks must be OK or On Demand")
+        cleaned_items.append({"id": item_id, "description": description, "unitCostUsd": unit_cost_usd, "remarks": remarks})
 
     STATE["pricing"] = {"usdToTzsRate": rate, "items": cleaned_items}
     return jsonify(deepcopy(STATE["pricing"]))

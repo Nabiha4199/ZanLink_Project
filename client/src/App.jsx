@@ -15,6 +15,20 @@ import { searchTanzaniaLocations } from "./services/tanzaniaLocations";
 import { formatDate, formatTime, money } from "./utils/formatters";
 import { canAct, statusClass } from "./utils/permissions";
 
+function mergePricingCatalog(pricingData) {
+  const savedItems = Array.isArray(pricingData?.items) ? pricingData.items : [];
+  const savedById = new Map(savedItems.map((item) => [item.id, item]));
+  const defaultIds = new Set(defaultPricing.items.map((item) => item.id));
+  return {
+    ...defaultPricing,
+    ...pricingData,
+    items: [
+      ...defaultPricing.items.map((item) => ({ ...item, ...(savedById.get(item.id) || {}) })),
+      ...savedItems.filter((item) => !defaultIds.has(item.id)),
+    ],
+  };
+}
+
 function App() {
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("zanlink-user") || "null"));
   const [view, setView] = useState("dashboard");
@@ -47,7 +61,7 @@ function App() {
     setReports(reportData);
     setClients(clientData);
     setUsers(userData);
-    setPricing(pricingData);
+    setPricing(mergePricingCatalog(pricingData));
     setUser((currentUser) => JSON.stringify(currentUser) === JSON.stringify(accountData) ? currentUser : accountData);
   }
 
@@ -1217,7 +1231,7 @@ function EngineerItemEditor({ items, setItems, pricing, currency }) {
                       <option value="">Select an item</option>
                       {pricing.items.map((stockItem) => (
                         <option key={stockItem.id} value={stockItem.description}>
-                          {stockItem.description} — {stockItem.id} — ${stockItem.unitCostUsd}
+                          {stockItem.description}
                         </option>
                       ))}
                     </select>
