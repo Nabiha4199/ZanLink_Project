@@ -557,7 +557,7 @@ function FlagImage({ iso, country }) {
   );
 }
 
-function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
+export function LocationPicker({ form, setForm, query, setQuery, error, setError }) {
   const [suggestions, setSuggestions] = useState([]);
   const [status, setStatus] = useState("idle");
   const [isOpen, setIsOpen] = useState(false);

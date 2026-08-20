@@ -3,7 +3,7 @@ import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
 import { defaultPricing, emptyItem, engineerStockItems, requestedServices, serviceTypes, subscriptionPackages } from "./config/workflow";
-import ClientsPage, { CountryCodePicker, countryCodeForIso, countryCodes } from "./pages/ClientsPage";
+import ClientsPage, { CountryCodePicker, countryCodeForIso, countryCodes, LocationPicker } from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -134,10 +134,11 @@ function App() {
 
   async function registerClient(payload) {
     try {
-      await api.createClient(user, payload);
+      const client = await api.createClient(user, payload);
       await refresh();
       setMessage("Client registered.");
       setTimeout(() => setMessage(""), 2600);
+      return client;
     } catch (error) {
       showError(error);
       throw error;
@@ -220,7 +221,7 @@ function App() {
         ) : view === "maintenance" ? (
           <MaintenanceForm clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createMaintenance(user, payload), "General Maintenance submitted to HOD.")} />
         ) : view === "survey" ? (
-          <SurveyRequestForm clients={clients} plans={clientPlans} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createSurvey(user, payload), "Site survey request submitted to Engineer.")} />
+          <SurveyRequestForm clients={clients} plans={clientPlans} onCancel={() => navigate("dashboard")} onRegisterClient={registerClient} onSubmit={(payload) => run(() => api.createSurvey(user, payload), "Site survey request submitted to Engineer.")} />
         ) : view === "clients" ? (
           <ClientsPage clients={clients} onRegister={registerClient} onUpdate={updateClient} />
         ) : view === "users" && ["System Admin", "Management"].includes(user.role) ? (
@@ -350,15 +351,48 @@ function MaintenanceForm({ clients, pricing, onSubmit, onCancel }) {
   );
 }
 
-function SurveyRequestForm({ clients, plans, onSubmit, onCancel }) {
+function SurveyRequestForm({ clients, plans, onSubmit, onCancel, onRegisterClient }) {
   const availablePlans = [...new Set([
     ...subscriptionPackages,
     ...plans,
   ])].sort((first, second) => first.localeCompare(second));
-  const [form, setForm] = useState({ clientId: "new", clientName: "", countryIso: "TZ", location: "", contact: "", email: "", package: subscriptionPackages[0] || "" });
-  return <FormShell title="Request Site Survey" subtitle="Sales starts the request; Engineer performs the survey." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Engineer">
+  const [form, setForm] = useState({ clientId: "new", clientName: "", countryIso: "TZ", countryDialCode: "+255", location: "", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [], package: subscriptionPackages[0] || "" });
+  const isRegisteringClient = form.clientId === "new";
+
+  async function registerNewClient() {
+    const client = await onRegisterClient({
+      name: form.clientName,
+      countryIso: form.countryIso,
+      countryDialCode: form.countryDialCode,
+      contact: form.contact,
+      email: form.email,
+      serviceArea: form.serviceArea,
+      street: form.street,
+      siteLocation: form.siteLocation,
+      staticIp: form.staticIp,
+      locations: form.locations,
+    });
+    setForm({ ...form, clientId: client.id, clientName: client.name, contact: client.contact, email: client.email, location: client.locations[0] || form.location });
+  }
+
+  function returnToClientSearch() {
+    setForm({ ...form, clientId: "", clientName: "", countryIso: "TZ", countryDialCode: "+255", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [], location: "" });
+  }
+
+  function startClientRegistration() {
+    setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", countryDialCode: "+255", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [], location: "" });
+  }
+
+  return <FormShell title="Request Site Survey" subtitle="Select a registered client or register a new client as part of this request." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Engineer">
     <div className="form-grid">
+      <div className="wide button-row client-mode-actions">
+        <button type="button" className={`btn client-mode-button ${isRegisteringClient ? "active" : ""}`} onClick={startClientRegistration}>Register New Client</button>
+        <button type="button" className={`btn client-mode-button ${!isRegisteringClient ? "active" : ""}`} onClick={returnToClientSearch}>Search Registered Clients</button>
+      </div>
       <ClientFields clients={clients} form={form} setForm={setForm} allowNewClient />
+      {isRegisteringClient && <div className="wide button-row">
+        <button type="button" className="btn" onClick={registerNewClient}>Register Client</button>
+      </div>}
       <label>Package Needed<select required value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })}>{availablePlans.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
     </div>
   </FormShell>;
@@ -836,9 +870,9 @@ function SurveyResultPreview({ doc, printId, extraClass = "" }) {
   return <article id={printId} className={`paper-form ${extraClass}`}>
     <header className="paper-head"><span className="paper-logo">zanlink</span><div><h2>Site Survey Result</h2><p>Survey Result No. {survey.resultNumber || doc.number}</p></div></header>
     <div className="paper-fields two">
-      <Field label="Survey Request No." value={doc.number} /><Field label="Client Name" value={doc.clientName} />
-      <Field label="Location" value={doc.location} /><Field label="Mobile Number" value={doc.contact} />
-      <Field label="Package Needed" value={doc.service} /><Field label="Connection Type" value={engineer.connectionType === "wireless" ? "Radiowaves (Wireless)" : engineer.connectionType} />
+      <Field label="Client Name" value={doc.clientName} /><Field label="Location" value={doc.location} />
+      <Field label="Mobile Number" value={doc.contact} /><Field label="Package Needed" value={doc.service} />
+      <Field label="Connection Type" value={engineer.connectionType === "wireless" ? "Radiowaves (Wireless)" : engineer.connectionType} />
       <Field label="Distance" value={engineer.connectionType === "fibre" ? engineer.distance : "N/A"} /><Field label={engineer.connectionType === "wireless" ? "Tower" : "Node"} value={engineer.connectionType === "wireless" ? engineer.tower : engineer.node} />
       <Field label="Proceed with Installation" value={engineer.proceed ? "Yes" : "No"} /><Field label="Surveyed By" value={engineer.submittedByName} />
       <Field label="Comments" value={engineer.comments} />
@@ -1452,19 +1486,20 @@ function ClientPicker({ clients, value, onChange, allowNewClient }) {
       autoComplete="off"
       onBlur={() => setTimeout(() => setOpen(false), 150)}
       onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
-      onFocus={() => setOpen(true)}
+      onFocus={() => { setQuery(""); setOpen(true); }}
       placeholder={selected ? selected.name : "Search registered clients"}
-      value={query}
+      value={open ? query : selected?.name || query}
     />
     {open && <div className="client-picker-options" role="listbox">
-      {allowNewClient && <button type="button" className="client-picker-option" onMouseDown={(event) => event.preventDefault()} onClick={() => choose("new")}>Add New Client</button>}
+      {allowNewClient && <button type="button" className="client-picker-option" onMouseDown={(event) => event.preventDefault()} onClick={() => choose("new")}>Register New Client</button>}
       {matches.map((client) => <button type="button" className="client-picker-option" key={client.id} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(client.id)}>
         <strong>{client.name}</strong>
         <small>{[client.contact, client.email, client.street, client.siteLocation].filter(Boolean).join(" · ")}</small>
       </button>)}
       {!matches.length && <span className="client-picker-empty">No matching client.</span>}
     </div>}
-    {!clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
+    {allowNewClient && <small className="field-help">Choose “Register New Client” to add the client while submitting this site survey request.</small>}
+    {!allowNewClient && !clients.length && <small className="field-help">Register a client from the Clients page first.</small>}
   </label>;
 }
 
@@ -1472,11 +1507,13 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
   const selectedClient = clients.find((client) => client.id === form.clientId);
   const isNewClient = allowNewClient && form.clientId === "new";
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationError, setLocationError] = useState("");
   const contactParts = splitContactNumber(form.contact, form.countryIso);
 
   function selectClient(clientId) {
     if (allowNewClient && clientId === "new") {
-      setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", countryDialCode: "+255", contact: "", email: "", location: "" });
+      setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", countryDialCode: "+255", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [], location: "" });
       return;
     }
     const client = clients.find((item) => item.id === clientId);
@@ -1505,7 +1542,7 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
     <>
       <ClientPicker clients={clients} value={form.clientId} onChange={selectClient} allowNewClient={allowNewClient} />
       {isNewClient && <label>Client Name<input required value={form.clientName} onChange={(event) => setForm({ ...form, clientName: event.target.value })} /></label>}
-      <label>Location
+      {!isNewClient && <label>Location
         {selectedClient?.locations?.length ? (
           <select required value={form.location} onChange={(event) => updateLocation(event.target.value)}>
             {selectedClient.locations.map((location) => (
@@ -1518,7 +1555,7 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
             onChange={updateLocation}
           />
         )}
-      </label>
+      </label>}
       <label>Contact
         <div className="phone-input-wrap">
           <CountryCodePicker
@@ -1547,6 +1584,13 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
         </div>
       </label>
       {isNewClient ? <label>Email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label> : <label>Email<input readOnly value={form.email} /></label>}
+      {isNewClient && <>
+        <label>Service Area<input value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} /></label>
+        <label>Street<input value={form.street} onChange={(event) => setForm({ ...form, street: event.target.value })} /></label>
+        <label>Site Location(s)<input value={form.siteLocation} onChange={(event) => setForm({ ...form, siteLocation: event.target.value })} /></label>
+        <label>Static IP<input value={form.staticIp} onChange={(event) => setForm({ ...form, staticIp: event.target.value })} placeholder="Yes or No" /></label>
+        <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} error={locationError} setError={setLocationError} />
+      </>}
     </>
   );
 }

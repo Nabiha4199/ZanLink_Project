@@ -1147,9 +1147,9 @@ def build_survey_result_pdf(doc: dict) -> BytesIO:
     pdf.drawRightString(width - 22 * mm, height - 42 * mm, f"Survey Result No. {survey.get('resultNumber') or doc['number']}")
     y = height - 60 * mm
     fields = [
-        ("Survey Request No.", doc["number"]), ("Client Name", doc.get("clientName")),
-        ("Location", doc.get("location")), ("Mobile Number", doc.get("contact")),
-        ("Package Needed", doc.get("service")), ("Connection Type", engineer.get("connectionType")),
+        ("Client Name", doc.get("clientName")), ("Location", doc.get("location")),
+        ("Mobile Number", doc.get("contact")), ("Package Needed", doc.get("service")),
+        ("Connection Type", engineer.get("connectionType")),
         ("Distance", engineer.get("distance") if engineer.get("connectionType") == "fibre" else "N/A"),
         ("Tower" if engineer.get("connectionType") == "wireless" else "Node", engineer.get("tower") if engineer.get("connectionType") == "wireless" else engineer.get("node")), ("Survey Comments", engineer.get("comments")),
         ("Proceed with Installation", "Yes" if engineer.get("proceed") else "No"),
@@ -1891,7 +1891,11 @@ def create_survey():
         raise PermissionError("Only Sales and admin users can request a site survey")
     payload = request.get_json(force=True)
     package = require_text(payload, "package", "Package needed")
-    existing_client = find_client(str(payload.get("clientId") or ""))
+    client_id = str(payload.get("clientId") or "").strip()
+    registering_new_client = client_id in {"", "new"}
+    existing_client = find_client(client_id)
+    if client_id and not registering_new_client and not existing_client:
+        raise ValueError("Select a registered client or choose Register New Client")
     if existing_client:
         client_name = existing_client["name"]
         contact = existing_client.get("contact") or require_text(payload, "contact", "Mobile number")
@@ -1924,7 +1928,7 @@ def create_survey():
         "contact": contact, "location": location, "email": existing_client.get("email", ""),
         "service": package, "status": "Pending Engineer", "currentDepartment": "Engineer",
         "createdBy": user["id"], "createdByName": user["name"], "createdByRole": user["role"], "createdAt": now_iso(),
-        "sales": {"package": package, "submittedBy": user["id"], "submittedByName": user["name"], "submittedByRole": user["role"], "submittedAt": now_iso()},
+        "sales": {"package": package, "newClientRegistered": registering_new_client, "submittedBy": user["id"], "submittedByName": user["name"], "submittedByRole": user["role"], "submittedAt": now_iso()},
         "engineer": {}, "hoc": {}, "accounts": {}, "store": {"confirmed": False, "items": []}, "management": {},
         "history": [history(user["id"], "Created site survey request", "Submitted to Engineer.", user["name"])],
     }
