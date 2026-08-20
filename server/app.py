@@ -134,56 +134,89 @@ def imported_clients() -> list[dict]:
     if not os.path.isfile(workbook_path):
         return []
     namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+    def cell_text(cell, strings: list[str]) -> str:
+        if cell.get("t") == "inlineStr":
+            return "".join(node.text or "" for node in cell.iter(f"{namespace}t"))
+        value = cell.find(f"{namespace}v")
+        raw = value.text if value is not None else ""
+        if cell.get("t") == "s" and raw:
+            return strings[int(raw)]
+        return raw
+
+    def column_number(cell_ref: str) -> int:
+        column = "".join(character for character in cell_ref if character.isalpha())
+        column_index = 0
+        for character in column:
+            column_index = column_index * 26 + ord(character.upper()) - ord("A") + 1
+        return column_index
+
     try:
         with ZipFile(workbook_path) as workbook:
             strings_root = ElementTree.fromstring(workbook.read("xl/sharedStrings.xml"))
             strings = ["".join(node.text or "" for node in item.iter(f"{namespace}t")) for item in strings_root.iter(f"{namespace}si")]
-            sheet = ElementTree.fromstring(workbook.read("xl/worksheets/sheet1.xml"))
+            worksheet_names = sorted(
+                (name for name in workbook.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")),
+                key=lambda name: int(re.search(r"sheet(\d+)\.xml$", name).group(1)),
+            )
+            sheets = [ElementTree.fromstring(workbook.read(name)) for name in worksheet_names]
     except (OSError, KeyError, ElementTree.ParseError):
         return []
     clients = []
-    for row in sheet.iter(f"{namespace}row"):
-        values = [""] * 9
-        for cell in row.iter(f"{namespace}c"):
-            value = cell.find(f"{namespace}v")
-            raw = value.text if value is not None else ""
-            column = "".join(character for character in cell.get("r", "") if character.isalpha())
-            column_index = 0
-            for character in column:
-                column_index = column_index * 26 + ord(character) - ord("A") + 1
-            source_index = column_index - 2  # The workbook's client data begins in column B.
-            if source_index >= 0:
-                if source_index >= len(values):
-                    values.extend([""] * (source_index - len(values) + 1))
-                values[source_index] = strings[int(raw)] if cell.get("t") == "s" and raw else raw
-        for plan in values[2].replace("\u00a0", " ").split(","):
-            if plan.strip() and plan.strip().lower() != "internet plans":
-                IMPORTED_CLIENT_PLANS.add(plan.strip())
-        # Import every client row; the sheet repeats its column headings between batches.
-        if not values[0].strip() or values[0].strip().lower() == "full name":
-            continue
-        locations = []
-        source_locations = ([values[5]] if len(values) > 5 else []) + (values[6].replace("\u00a0", " ").split(",") if len(values) > 6 else [])
-        for location in source_locations:
-            location = " ".join(location.split()).strip()
-            if location and location.lower() not in {item.lower() for item in locations}:
-                locations.append(location)
-        clients.append({
-            "id": f"import-{row.get('r')}",
-            "name": values[0].strip(),
-            "contact": values[1].strip(),
-            "plans": values[2].strip(),
-            "serviceArea": values[3].strip(),
-            "email": values[4].strip() if len(values) > 4 else "",
-            "street": values[5].strip() if len(values) > 5 else "",
-            "siteLocation": values[6].strip() if len(values) > 6 else "",
-            "connectionType": values[7].strip() if len(values) > 7 else "",
-            "staticIp": values[8].strip() if len(values) > 8 else "",
-            "locations": locations,
-            "geoLocations": [],
-            "createdAt": now_iso(),
-            "imported": True,
-        })
+    header_aliases = {
+        "full name": "name", "phone number": "contact", "internet plans": "plans", "location": "serviceArea",
+        "email": "email", "street": "street", "site location": "siteLocation", "rad/ip/l2": "connectionType",
+        "static ip": "staticIp",
+    }
+    default_columns = {
+        2: "name", 3: "contact", 4: "plans", 5: "serviceArea", 6: "email", 7: "street", 8: "siteLocation",
+        9: "connectionType", 10: "staticIp",
+    }
+    for sheet_index, sheet in enumerate(sheets, start=1):
+        column_map = default_columns
+        for row in sheet.iter(f"{namespace}row"):
+            values = {}
+            row_text_by_column = {}
+            for cell in row.iter(f"{namespace}c"):
+                text = cell_text(cell, strings).strip()
+                column_index = column_number(cell.get("r", ""))
+                row_text_by_column[column_index] = text
+                field = column_map.get(column_index)
+                if field:
+                    values[field] = text
+            normalized_headers = {index: " ".join(value.replace("\u00a0", " ").split()).lower() for index, value in row_text_by_column.items()}
+            if any(value == "full name" for value in normalized_headers.values()):
+                column_map = {index: header_aliases[value] for index, value in normalized_headers.items() if value in header_aliases}
+                continue
+            if not values.get("name"):
+                continue
+            for field in ("name", "contact", "plans", "serviceArea", "email", "street", "siteLocation", "connectionType", "staticIp"):
+                values.setdefault(field, "")
+            for plan in values["plans"].replace("\u00a0", " ").split(","):
+                if plan.strip() and plan.strip().lower() != "internet plans":
+                    IMPORTED_CLIENT_PLANS.add(plan.strip())
+            locations = []
+            source_locations = [values["street"], *values["siteLocation"].replace("\u00a0", " ").split(",")]
+            for location in source_locations:
+                location = " ".join(location.split()).strip()
+                if location and location.lower() not in {item.lower() for item in locations}:
+                    locations.append(location)
+            clients.append({
+                "id": f"import-{sheet_index}-{row.get('r')}",
+                "name": values["name"].strip(),
+                "contact": values["contact"].strip(),
+                "plans": values["plans"].strip(),
+                "serviceArea": values["serviceArea"].strip(),
+                "email": values["email"].strip(),
+                "street": values["street"].strip(),
+                "siteLocation": values["siteLocation"].strip(),
+                "connectionType": values["connectionType"].strip(),
+                "staticIp": values["staticIp"].strip(),
+                "locations": locations,
+                "geoLocations": [],
+                "createdAt": now_iso(),
+                "imported": True,
+            })
     return clients
 
 
@@ -586,6 +619,24 @@ def normalize_tanzania_contact(value: str | None) -> str:
     if not re.fullmatch(r"[67]\d{8}", digits):
         raise ValueError("Enter a valid Tanzania contact number")
     return f"+255 {digits[:3]} {digits[3:6]} {digits[6:]}"
+
+
+def normalize_country_contact(payload: dict) -> tuple[str, str, str]:
+    country_iso = str(payload.get("countryIso") or "TZ").strip().upper()
+    if not re.fullmatch(r"[A-Z]{2}", country_iso):
+        raise ValueError("Select a valid country")
+    country_dial_code = str(payload.get("countryDialCode") or ("+255" if country_iso == "TZ" else "")).strip()
+    if country_iso == "TZ":
+        return normalize_tanzania_contact(payload.get("contact")), "TZ", "+255"
+    if not re.fullmatch(r"\+\d[\d\s-]{0,15}", country_dial_code):
+        raise ValueError("Select a valid country code")
+    dial_digits = re.sub(r"\D", "", country_dial_code)
+    contact_digits = re.sub(r"\D", "", str(payload.get("contact") or ""))
+    if contact_digits.startswith(dial_digits):
+        contact_digits = contact_digits[len(dial_digits):]
+    if not contact_digits:
+        raise ValueError("Enter a valid contact number")
+    return f"{country_dial_code} {contact_digits}", country_iso, country_dial_code
 
 
 def optional_text(payload: dict, field: str, default: str = "", max_length: int = 500) -> str:
@@ -1511,10 +1562,13 @@ def create_client():
     email = normalize_email(payload.get("email"))
     if any(client.get("email", "").lower() == email for client in STATE["clients"]):
         raise ValueError("A client with this email is already registered")
+    contact, country_iso, country_dial_code = normalize_country_contact(payload)
     client = {
         "id": f"c-{uuid4()}",
         "name": require_text(payload, "name", "Client name"),
-        "contact": normalize_tanzania_contact(payload.get("contact")),
+        "countryIso": country_iso,
+        "countryDialCode": country_dial_code,
+        "contact": contact,
         "email": email,
         "locations": cleaned_locations,
         **{field: str(payload.get(field) or "").strip() for field in ("plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp")},
@@ -1542,9 +1596,12 @@ def update_client(client_id: str):
     email = normalize_email(email) if email else ""
     if email and any(item["id"] != client_id and item.get("email", "").lower() == email for item in STATE["clients"]):
         raise ValueError("A client with this email is already registered")
+    contact, country_iso, country_dial_code = normalize_country_contact(payload)
     client.update({
         "name": require_text(payload, "name", "Client name"),
-        "contact": str(payload.get("contact") or "").strip(),
+        "countryIso": country_iso,
+        "countryDialCode": country_dial_code,
+        "contact": contact,
         "email": email,
         "locations": cleaned_locations,
         **{field: str(payload.get(field) or "").strip() for field in ("plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp")},
@@ -1843,13 +1900,23 @@ def create_survey():
             existing_client.setdefault("locations", []).append(location)
     else:
         client_name = require_text(payload, "clientName", "Client name")
-        contact = normalize_tanzania_contact(payload.get("contact"))
+        contact, country_iso, country_dial_code = normalize_country_contact(payload)
         location = require_text(payload, "location", "Location")
         email = normalize_email(payload.get("email"))
         existing_client = next((client for client in STATE["clients"] if client.get("email", "").lower() == email and email), None)
         if existing_client:
             raise ValueError("A client with this email is already registered. Select the client from the list.")
-        existing_client = {"id": f"c-{uuid4()}", "name": client_name, "contact": contact, "email": email, "locations": [location], "geoLocations": [], "createdAt": now_iso()}
+        existing_client = {
+            "id": f"c-{uuid4()}",
+            "name": client_name,
+            "countryIso": country_iso,
+            "countryDialCode": country_dial_code,
+            "contact": contact,
+            "email": email,
+            "locations": [location],
+            "geoLocations": [],
+            "createdAt": now_iso(),
+        }
         STATE["clients"].insert(0, existing_client)
     doc = {
         "id": str(uuid4()), "type": "survey", "number": next_number("survey"),

@@ -3,7 +3,7 @@ import Field from "./components/common/Field";
 import GuidedTour from "./components/common/GuidedTour";
 import Sidebar from "./components/layout/Sidebar";
 import { defaultPricing, emptyItem, engineerStockItems, requestedServices, serviceTypes, subscriptionPackages } from "./config/workflow";
-import ClientsPage, { CountryCodePicker, countryCodes } from "./pages/ClientsPage";
+import ClientsPage, { CountryCodePicker, countryCodeForIso, countryCodes } from "./pages/ClientsPage";
 import ClientSummariesPage from "./pages/ClientSummariesPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -1395,22 +1395,39 @@ const countryCodesByPrefix = [...countryCodes].sort((first, second) => second[2]
 
 function splitContactNumber(contact, fallbackIso = "TZ") {
   const value = String(contact || "").trim();
-  const matchedCountry = countryCodesByPrefix.find(([, , dialCode]) =>
-    value === dialCode || value.startsWith(`${dialCode} `) || (dialCode === "+255" && value.startsWith("255"))
-  );
-  const selectedCountry = matchedCountry || countryCodes.find(([iso]) => iso === fallbackIso) || countryCodes[0];
+  const compactValue = value.replace(/[\s-]/g, "");
+  const digits = compactValue.replace(/\D/g, "");
+  const fallbackCountry = countryCodeForIso(fallbackIso);
+  const fallbackDialCode = fallbackCountry[2].replace(/[\s-]/g, "");
+  const fallbackDialDigits = fallbackDialCode.replace(/\D/g, "");
+  const preferredCountry = (
+    compactValue === fallbackDialCode ||
+    compactValue.startsWith(fallbackDialCode) ||
+    digits.startsWith(fallbackDialDigits)
+  ) ? fallbackCountry : null;
+  const matchedCountry = countryCodesByPrefix.find(([, , dialCode]) => {
+    const compactDialCode = dialCode.replace(/[\s-]/g, "");
+    const dialDigits = compactDialCode.replace(/\D/g, "");
+    if (compactValue === compactDialCode || compactValue.startsWith(compactDialCode)) return true;
+    if (!digits.startsWith(dialDigits)) return false;
+    if (dialCode === "+255") return true;
+    return dialDigits.length > 1 && digits.length > dialDigits.length + 4;
+  });
+  const selectedCountry = preferredCountry || matchedCountry || fallbackCountry;
+  const selectedDialDigits = selectedCountry[2].replace(/\D/g, "");
+  const number = matchedCountry
+    ? digits.slice(selectedDialDigits.length)
+    : value;
   return {
     countryIso: selectedCountry[0],
-    number: matchedCountry
-      ? value.slice(value.startsWith(matchedCountry[2]) ? matchedCountry[2].length : matchedCountry[2].length - 1).trim()
-      : value,
+    number,
   };
 }
 
 function formatContactNumber(countryIso, number) {
   const trimmedNumber = String(number || "").trim();
   if (!trimmedNumber) return "";
-  const selectedCountry = countryCodes.find(([iso]) => iso === countryIso) || countryCodes[0];
+  const selectedCountry = countryCodeForIso(countryIso);
   return `${selectedCountry[2]} ${trimmedNumber}`;
 }
 
@@ -1459,17 +1476,18 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
 
   function selectClient(clientId) {
     if (allowNewClient && clientId === "new") {
-      setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", contact: "", email: "", location: "" });
+      setForm({ ...form, clientId: "new", clientName: "", countryIso: "TZ", countryDialCode: "+255", contact: "", email: "", location: "" });
       return;
     }
     const client = clients.find((item) => item.id === clientId);
-    const clientContact = splitContactNumber(client?.contact || "", "TZ");
+    const clientContact = splitContactNumber(client?.contact || "", client?.countryIso || "TZ");
     const location = client?.locations?.[0] || "";
     setForm({
       ...form,
       clientId,
       clientName: client?.name || "",
       countryIso: clientContact.countryIso,
+      countryDialCode: countryCodeForIso(clientContact.countryIso)[2],
       contact: client?.contact || "",
       email: client?.email || "",
       location,
@@ -1510,6 +1528,7 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
             onChange={(countryIso) => setForm({
               ...form,
               countryIso,
+              countryDialCode: countryCodeForIso(countryIso)[2],
               contact: formatContactNumber(countryIso, contactParts.number),
             })}
           />
@@ -1521,6 +1540,7 @@ function ClientFields({ clients, form, setForm, allowNewClient = false }) {
             onChange={(event) => setForm({
               ...form,
               countryIso: contactParts.countryIso,
+              countryDialCode: countryCodeForIso(contactParts.countryIso)[2],
               contact: formatContactNumber(contactParts.countryIso, event.target.value),
             })}
           />

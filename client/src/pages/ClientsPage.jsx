@@ -248,6 +248,35 @@ export const countryCodes = [
 
 const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [] };
 
+export function countryCodeForIso(countryIso) {
+  return countryCodes.find(([iso]) => iso === countryIso) || countryCodes[0];
+}
+
+const countryCodesByPrefix = [...countryCodes].sort((first, second) => second[2].replace(/\D/g, "").length - first[2].replace(/\D/g, "").length);
+
+function splitContactNumber(contact, fallbackIso = "TZ") {
+  const value = String(contact || "").trim();
+  const compactValue = value.replace(/[\s-]/g, "");
+  const digits = compactValue.replace(/\D/g, "");
+  const fallbackCountry = countryCodeForIso(fallbackIso);
+  const fallbackDialCode = fallbackCountry[2].replace(/[\s-]/g, "");
+  const fallbackDialDigits = fallbackDialCode.replace(/\D/g, "");
+  const preferredCountry = (
+    compactValue === fallbackDialCode ||
+    compactValue.startsWith(fallbackDialCode) ||
+    digits.startsWith(fallbackDialDigits)
+  ) ? fallbackCountry : null;
+  const matchedCountry = countryCodesByPrefix.find(([, , dialCode]) => {
+    const compactDialCode = dialCode.replace(/[\s-]/g, "");
+    const dialDigits = compactDialCode.replace(/\D/g, "");
+    return compactValue === compactDialCode || compactValue.startsWith(compactDialCode) || digits.startsWith(dialDigits);
+  });
+  const selectedCountry = preferredCountry || matchedCountry || fallbackCountry;
+  const selectedDialDigits = selectedCountry[2].replace(/\D/g, "");
+  const number = digits.startsWith(selectedDialDigits) ? digits.slice(selectedDialDigits.length) : value;
+  return { countryIso: selectedCountry[0], number };
+}
+
 function normalizeTanzaniaContact(value) {
   const digits = String(value || "").replace(/\D/g, "");
   let local = digits;
@@ -263,11 +292,21 @@ function tanzaniaLocalContact(value) {
   return digits;
 }
 
+function formatContactForCountry(countryIso, value) {
+  const selectedCountry = countryCodeForIso(countryIso);
+  if (selectedCountry[0] === "TZ") return normalizeTanzaniaContact(value);
+  const digits = String(value || "").replace(/\D/g, "");
+  const dialDigits = selectedCountry[2].replace(/\D/g, "");
+  const localDigits = digits.startsWith(dialDigits) ? digits.slice(dialDigits.length) : digits;
+  return localDigits ? `${selectedCountry[2]} ${localDigits}` : "";
+}
+
 export default function ClientsPage({ clients, onRegister, onUpdate }) {
   const [form, setForm] = useState(emptyClient);
   const [locationQuery, setLocationQuery] = useState("");
   const [search, setSearch] = useState("");
   const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const [editCountryPickerOpen, setEditCountryPickerOpen] = useState(false);
   const [contactError, setContactError] = useState("");
   const [locationError, setLocationError] = useState("");
   const [editingClient, setEditingClient] = useState(null);
@@ -286,16 +325,22 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
 
   function submit(event) {
     event.preventDefault();
-    const selectedCountry = countryCodes.find(([iso]) => iso === form.countryIso) || countryCodes[0];
-    const contact = selectedCountry[0] === "TZ" ? normalizeTanzaniaContact(form.contact) : `${selectedCountry[2]} ${form.contact}`.trim();
+    const selectedCountry = countryCodeForIso(form.countryIso);
+    const contact = formatContactForCountry(selectedCountry[0], form.contact);
     if (selectedCountry[0] === "TZ" && !contact) {
       setContactError("Enter a valid Tanzania number, for example 0712 345 678.");
+      return;
+    }
+    if (!contact) {
+      setContactError(`Enter a valid ${selectedCountry[1]} phone number.`);
       return;
     }
     setContactError("");
     setLocationError("");
     onRegister({
       name: form.name,
+      countryIso: selectedCountry[0],
+      countryDialCode: selectedCountry[2],
       contact,
       email: form.email,
       locations: locationsToSubmit,
@@ -310,15 +355,37 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
   }
 
   function startEditing(client) {
-    setEditingClient({ ...client, locationsText: (client.locations || []).join(", ") });
+    const contactParts = splitContactNumber(client.contact, client.countryIso || "TZ");
+    const selectedCountry = countryCodeForIso(contactParts.countryIso);
+    setEditingClient({
+      ...client,
+      countryIso: selectedCountry[0],
+      countryDialCode: selectedCountry[2],
+      contact: contactParts.number,
+      locationsText: (client.locations || []).join(", "),
+    });
     window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function saveClient(event) {
     event.preventDefault();
     const { locationsText, plans, connectionType, ...client } = editingClient;
+    const selectedCountry = countryCodeForIso(client.countryIso);
+    const contact = formatContactForCountry(selectedCountry[0], client.contact);
+    if (selectedCountry[0] === "TZ" && !contact) {
+      setContactError("Enter a valid Tanzania number, for example 0712 345 678.");
+      return;
+    }
+    if (!contact) {
+      setContactError(`Enter a valid ${selectedCountry[1]} phone number.`);
+      return;
+    }
+    setContactError("");
     onUpdate(client.id, {
       ...client,
+      countryIso: selectedCountry[0],
+      countryDialCode: selectedCountry[2],
+      contact,
       locations: locationsText.split(/[\n,]/).map((location) => location.trim()).filter(Boolean),
     }).then(() => setEditingClient(null)).catch(() => {});
   }
@@ -376,7 +443,31 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
         <div className="section-title"><h2>Edit Client #{clients.findIndex((client) => client.id === editingClient.id) + 1}</h2></div>
         <div className="form-grid">
           <label>Client Name<input required value={editingClient.name} onChange={(event) => setEditingClient({ ...editingClient, name: event.target.value })} /></label>
-          <label>Contact Number<input value={editingClient.contact || ""} onChange={(event) => setEditingClient({ ...editingClient, contact: event.target.value })} /></label>
+          <label>Contact Number
+            <div className="phone-input-wrap">
+              <CountryCodePicker
+                open={editCountryPickerOpen}
+                selectedIso={editingClient.countryIso || "TZ"}
+                setOpen={setEditCountryPickerOpen}
+                onChange={(countryIso) => setEditingClient({
+                  ...editingClient,
+                  countryIso,
+                  countryDialCode: countryCodeForIso(countryIso)[2],
+                  contact: countryIso === "TZ" ? tanzaniaLocalContact(editingClient.contact) : editingClient.contact,
+                })}
+              />
+              <input
+                inputMode="tel"
+                required
+                value={editingClient.countryIso === "TZ" ? tanzaniaLocalContact(editingClient.contact) : editingClient.contact}
+                onChange={(event) => setEditingClient({
+                  ...editingClient,
+                  contact: editingClient.countryIso === "TZ" ? tanzaniaLocalContact(event.target.value) : event.target.value,
+                })}
+              />
+            </div>
+            {contactError && <small className="field-error">{contactError}</small>}
+          </label>
           <label>Email Address<input type="email" value={editingClient.email || ""} onChange={(event) => setEditingClient({ ...editingClient, email: event.target.value })} /></label>
           <label>Service Area<input value={editingClient.serviceArea || ""} onChange={(event) => setEditingClient({ ...editingClient, serviceArea: event.target.value })} /></label>
           <label>Street<input value={editingClient.street || ""} onChange={(event) => setEditingClient({ ...editingClient, street: event.target.value })} /></label>
@@ -409,7 +500,7 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
 }
 
 export function CountryCodePicker({ open, selectedIso, setOpen, onChange }) {
-  const selectedCountry = countryCodes.find(([iso]) => iso === selectedIso) || countryCodes[0];
+  const selectedCountry = countryCodeForIso(selectedIso);
 
   function selectCountry(iso) {
     onChange(iso);
