@@ -354,7 +354,6 @@ function SurveyRequestForm({ clients, plans, onSubmit, onCancel }) {
   const availablePlans = [...new Set([
     ...subscriptionPackages,
     ...plans,
-    ...clients.flatMap((client) => String(client.plans || "").replace(/\u00a0/g, " ").split(",").map((plan) => plan.trim()).filter(Boolean)),
   ])].sort((first, second) => first.localeCompare(second));
   const [form, setForm] = useState({ clientId: "new", clientName: "", countryIso: "TZ", location: "", contact: "", email: "", package: subscriptionPackages[0] || "" });
   return <FormShell title="Request Site Survey" subtitle="Sales starts the request; Engineer performs the survey." onCancel={onCancel} onSubmit={() => onSubmit(form)} submitLabel="Submit to Engineer">
@@ -768,12 +767,14 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
 }
 
 function SurveyActions({ user, doc, run }) {
-  const engineerOpen = canAct(user, "Engineer") && ["Pending Engineer", "On Hold"].includes(doc.status);
+  const engineerOpen = canAct(user, "Engineer") && doc.status === "Pending Engineer";
+  const salesReviewOpen = canAct(user, "Sales") && doc.status === "On Hold";
   const hocOpen = canAct(user, "HOC") && doc.status === "Pending HOC";
   const accountsOpen = canAct(user, "Accounts") && doc.status === "Pending Accounts";
   const storeOpen = canAct(user, "Store") && doc.status === "Pending Store";
   const managementOpen = canAct(user, "Management") && doc.status === "Pending Management";
-  const [engineer, setEngineer] = useState({ connectionType: doc.engineer?.connectionType || "fibre", distance: doc.engineer?.distance || "", node: doc.engineer?.node || "", comments: doc.engineer?.comments || "", proceed: doc.engineer?.proceed === false ? "no" : "yes", clientFeedback: doc.engineer?.clientFeedback || "", currency: doc.engineer?.currency || "TZS", items: doc.engineer?.items?.length ? doc.engineer.items : [{ ...emptyItem }] });
+  const [engineer, setEngineer] = useState({ connectionType: doc.engineer?.connectionType || "fibre", distance: doc.engineer?.distance || "", node: doc.engineer?.node || "", tower: doc.engineer?.tower || "", comments: doc.engineer?.comments || "", proceed: doc.engineer?.proceed === false ? "no" : "yes", clientFeedback: doc.engineer?.clientFeedback || "", currency: doc.engineer?.currency || "TZS", items: doc.engineer?.items?.length ? doc.engineer.items : [{ ...emptyItem }] });
+  const [salesReviewRemarks, setSalesReviewRemarks] = useState(doc.salesReview?.remarks || "");
   const [paymentConfirmation, setPaymentConfirmation] = useState(null);
   const [hocRemarks, setHocRemarks] = useState(doc.hoc?.remarks || "");
   const surveyEquipment = doc.sales?.equipment?.length ? doc.sales.equipment : (doc.engineer?.items || []);
@@ -798,15 +799,23 @@ function SurveyActions({ user, doc, run }) {
   return <>
     {speedTestOpen && <ActionPanel title="Work Order Speed Test" enabled initiallyEditing actionLabel="Save Speed Test" onAction={() => run(() => api.surveySpeedTest(user, doc.id, { speedTest }), "Speed test recorded on the work order.")}><label>Speed Test Obtained<input required value={speedTest} onChange={(event) => setSpeedTest(event.target.value)} /></label></ActionPanel>}
     {canPrint && <section className="panel"><div className="section-title"><h2>Survey Documents</h2><span>{showDocumentPack ? "Ready for Management review" : "Available before Management approval"}</span></div><div className="button-row">{(canAct(user, "Engineer") || canAct(user, "HOC")) && <button className="btn" type="button" onClick={() => printElementById(surveyResultPrintId)}>Print Survey Result</button>}<button className="btn secondary" type="button" onClick={() => printElementById(stockPrintId)}>Print Stock Requisition</button><button className="btn secondary" type="button" onClick={() => printElementById(workOrderPrintId)}>Print Work Order</button><button className="btn" type="button" onClick={() => printElementsByIds(surveyDocumentPrintIds)}>Print All</button></div><div className={showDocumentPack ? "document-preview-grid" : ""}><SurveyResultPreview doc={doc} printId={surveyResultPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><StockRequisitionPreview doc={doc} printId={stockPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><WorkOrderPreview doc={doc} printId={workOrderPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />{doc.paymentConfirmation?.dataUrl && <PaymentConfirmationPreview doc={doc} printId={paymentConfirmationPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />}</div></section>}
-    {!completedSurvey && canAct(user, "Engineer") && (!postStoreReview || managementViewer) && <ActionPanel title="Engineer Site Survey" enabled={engineerOpen} initiallyEditing={engineerOpen} actionLabel="Submit Survey Result" onAction={() => run(() => api.surveyEngineer(user, doc.id, engineer), engineer.proceed === "no" ? "Survey placed on hold." : "Survey result submitted to HOC.")}>
-      <div className="form-grid"><label>Connection Type<select value={engineer.connectionType} onChange={(event) => setEngineer({ ...engineer, connectionType: event.target.value })}><option value="fibre">Fibre</option><option value="wireless">Radiowaves (Wireless)</option></select></label>{engineer.connectionType === "fibre" && <label>Distance<input required value={engineer.distance} onChange={(event) => setEngineer({ ...engineer, distance: event.target.value })} /></label>}<label>Node<input required value={engineer.node} onChange={(event) => setEngineer({ ...engineer, node: event.target.value })} /></label><label>Currency<select value={engineer.currency} onChange={(event) => setEngineer({ ...engineer, currency: event.target.value })}><option>TZS</option><option>USD</option></select></label><label>Proceed?<select value={engineer.proceed} onChange={(event) => setEngineer({ ...engineer, proceed: event.target.value })}><option value="yes">Yes</option><option value="no">No</option></select></label><label className="wide">Comments<textarea required value={engineer.comments} onChange={(event) => setEngineer({ ...engineer, comments: event.target.value })} /></label><label>Client Feedback<input required value={engineer.clientFeedback} onChange={(event) => setEngineer({ ...engineer, clientFeedback: event.target.value })} /></label></div>
+    {!completedSurvey && canAct(user, "Engineer") && (!postStoreReview || managementViewer) && <ActionPanel title="Engineer Site Survey" enabled={engineerOpen} initiallyEditing={engineerOpen} actionLabel="Submit Survey Result" onAction={() => run(() => api.surveyEngineer(user, doc.id, engineer), engineer.proceed === "no" ? "Survey placed on hold and returned to Sales." : "Survey result submitted to HOC.")}>
+      <div className="form-grid"><label>Connection Type<select value={engineer.connectionType} onChange={(event) => setEngineer({ ...engineer, connectionType: event.target.value })}><option value="fibre">Fibre</option><option value="wireless">Radiowaves (Wireless)</option></select></label>{engineer.connectionType === "fibre" && <label>Distance<input required value={engineer.distance} onChange={(event) => setEngineer({ ...engineer, distance: event.target.value })} /></label>}{engineer.connectionType === "fibre" ? <label>Node<input required value={engineer.node} onChange={(event) => setEngineer({ ...engineer, node: event.target.value })} /></label> : <label>Tower<input required value={engineer.tower} onChange={(event) => setEngineer({ ...engineer, tower: event.target.value })} /></label>}<label>Currency<select value={engineer.currency} onChange={(event) => setEngineer({ ...engineer, currency: event.target.value })}><option>TZS</option><option>USD</option></select></label><label>Proceed?<select value={engineer.proceed} onChange={(event) => setEngineer({ ...engineer, proceed: event.target.value })}><option value="yes">Yes</option><option value="no">No</option></select></label><label className="wide">Comments<textarea required value={engineer.comments} onChange={(event) => setEngineer({ ...engineer, comments: event.target.value })} /></label><label>Client Feedback<input required value={engineer.clientFeedback} onChange={(event) => setEngineer({ ...engineer, clientFeedback: event.target.value })} /></label></div>
       <ItemEditor items={engineer.items} setItems={(items) => setEngineer({ ...engineer, items })} engineerRequest currency={engineer.currency} />
+    </ActionPanel>}
+    {!completedSurvey && canAct(user, "Sales") && <ActionPanel title="Sales On-Hold Review" enabled={salesReviewOpen} initiallyEditing={salesReviewOpen} actionLabel="Return to Engineer" onAction={() => run(() => api.surveySalesReview(user, doc.id, { remarks: salesReviewRemarks }), "Survey returned to Engineer.")}>
+      <div className="form-grid">
+        <p><strong>Engineer Decision</strong><br />{doc.engineer?.proceed === false ? "No" : "-"}</p>
+        <p><strong>Engineer Comments</strong><br />{doc.engineer?.comments || "-"}</p>
+        <p><strong>Client Feedback</strong><br />{doc.engineer?.clientFeedback || "-"}</p>
+      </div>
+      <label>Sales Remarks<textarea required value={salesReviewRemarks} onChange={(event) => setSalesReviewRemarks(event.target.value)} /></label>
     </ActionPanel>}
     {!completedSurvey && canAct(user, "HOC") && (!postStoreReview || managementViewer) && <ActionPanel title="HOC Survey Review & Payment Confirmation" enabled={hocOpen} initiallyEditing={hocOpen} actionLabel="Confirm Payment to Accounts" onAction={() => run(() => api.surveyHoc(user, doc.id, { paid: true, paymentConfirmation, remarks: hocRemarks }), "Payment confirmed and sent to Accounts.")}>
       <div className="form-grid">
         <p><strong>Client Name</strong><br />{doc.clientName}</p><p><strong>Location</strong><br />{doc.location}</p>
         <p><strong>Mobile Number</strong><br />{doc.contact}</p><p><strong>Package Needed</strong><br />{doc.service}</p>
-        <p><strong>Connection Type</strong><br />{doc.engineer?.connectionType === "wireless" ? "Radiowaves (Wireless)" : doc.engineer?.connectionType || "-"}</p><p><strong>Node</strong><br />{doc.engineer?.node || "-"}</p>
+        <p><strong>Connection Type</strong><br />{doc.engineer?.connectionType === "wireless" ? "Radiowaves (Wireless)" : doc.engineer?.connectionType || "-"}</p><p><strong>{doc.engineer?.connectionType === "wireless" ? "Tower" : "Node"}</strong><br />{doc.engineer?.connectionType === "wireless" ? doc.engineer?.tower || "-" : doc.engineer?.node || "-"}</p>
         {doc.engineer?.connectionType === "fibre" && <p><strong>Distance</strong><br />{doc.engineer?.distance || "-"}</p>}
         <p><strong>Engineer Comments</strong><br />{doc.engineer?.comments || "-"}</p><p><strong>Client Feedback</strong><br />{doc.engineer?.clientFeedback || "-"}</p>
       </div>
@@ -830,7 +839,7 @@ function SurveyResultPreview({ doc, printId, extraClass = "" }) {
       <Field label="Survey Request No." value={doc.number} /><Field label="Client Name" value={doc.clientName} />
       <Field label="Location" value={doc.location} /><Field label="Mobile Number" value={doc.contact} />
       <Field label="Package Needed" value={doc.service} /><Field label="Connection Type" value={engineer.connectionType === "wireless" ? "Radiowaves (Wireless)" : engineer.connectionType} />
-      <Field label="Distance" value={engineer.connectionType === "fibre" ? engineer.distance : "N/A"} /><Field label="Node" value={engineer.node} />
+      <Field label="Distance" value={engineer.connectionType === "fibre" ? engineer.distance : "N/A"} /><Field label={engineer.connectionType === "wireless" ? "Tower" : "Node"} value={engineer.connectionType === "wireless" ? engineer.tower : engineer.node} />
       <Field label="Proceed with Installation" value={engineer.proceed ? "Yes" : "No"} /><Field label="Surveyed By" value={engineer.submittedByName} />
       <Field label="Comments" value={engineer.comments} />
     </div>
@@ -1387,12 +1396,14 @@ const countryCodesByPrefix = [...countryCodes].sort((first, second) => second[2]
 function splitContactNumber(contact, fallbackIso = "TZ") {
   const value = String(contact || "").trim();
   const matchedCountry = countryCodesByPrefix.find(([, , dialCode]) =>
-    value === dialCode || value.startsWith(`${dialCode} `)
+    value === dialCode || value.startsWith(`${dialCode} `) || (dialCode === "+255" && value.startsWith("255"))
   );
   const selectedCountry = matchedCountry || countryCodes.find(([iso]) => iso === fallbackIso) || countryCodes[0];
   return {
     countryIso: selectedCountry[0],
-    number: matchedCountry ? value.slice(matchedCountry[2].length).trim() : value,
+    number: matchedCountry
+      ? value.slice(value.startsWith(matchedCountry[2]) ? matchedCountry[2].length : matchedCountry[2].length - 1).trim()
+      : value,
   };
 }
 
@@ -1408,7 +1419,7 @@ function ClientPicker({ clients, value, onChange, allowNewClient }) {
   const [open, setOpen] = useState(false);
   const selected = clients.find((client) => client.id === value);
   const normalizedQuery = query.trim().toLowerCase();
-  const matches = clients.filter((client) => !normalizedQuery || [client.name, client.contact, client.email, client.plans, client.serviceArea, client.street, client.siteLocation, client.connectionType, client.staticIp, ...(client.locations || [])]
+  const matches = clients.filter((client) => !normalizedQuery || [client.name, client.contact, client.email, client.serviceArea, client.street, client.siteLocation, client.staticIp, ...(client.locations || [])]
     .join(" ").toLowerCase().includes(normalizedQuery));
 
   function choose(clientId) {
@@ -1432,7 +1443,7 @@ function ClientPicker({ clients, value, onChange, allowNewClient }) {
       {allowNewClient && <button type="button" className="client-picker-option" onMouseDown={(event) => event.preventDefault()} onClick={() => choose("new")}>Add New Client</button>}
       {matches.map((client) => <button type="button" className="client-picker-option" key={client.id} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(client.id)}>
         <strong>{client.name}</strong>
-        <small>{[client.contact, client.email, client.plans, client.street, client.siteLocation].filter(Boolean).join(" · ")}</small>
+        <small>{[client.contact, client.email, client.street, client.siteLocation].filter(Boolean).join(" · ")}</small>
       </button>)}
       {!matches.length && <span className="client-picker-empty">No matching client.</span>}
     </div>}

@@ -38,6 +38,7 @@ export const api = {
   createMaintenance: (user, payload) => request("/api/documents/maintenance", { method: "POST", body: JSON.stringify(payload) }, user),
   createSurvey: (user, payload) => request("/api/documents/survey", { method: "POST", body: JSON.stringify(payload) }, user),
   surveyEngineer: (user, id, payload) => request(`/api/documents/${id}/survey-engineer`, { method: "POST", body: JSON.stringify(payload) }, user),
+  surveySalesReview: (user, id, payload) => request(`/api/documents/${id}/survey-sales-review`, { method: "POST", body: JSON.stringify(payload) }, user),
   surveySpeedTest: (user, id, payload) => request(`/api/documents/${id}/survey-speed-test`, { method: "POST", body: JSON.stringify(payload) }, user),
   surveyHoc: (user, id, payload) => request(`/api/documents/${id}/survey-hoc`, { method: "POST", body: JSON.stringify(payload) }, user),
   sales: (user, id, payload) => request(`/api/documents/${id}/sales`, { method: "POST", body: JSON.stringify(payload) }, user),

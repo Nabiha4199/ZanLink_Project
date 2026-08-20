@@ -1100,7 +1100,7 @@ def build_survey_result_pdf(doc: dict) -> BytesIO:
         ("Location", doc.get("location")), ("Mobile Number", doc.get("contact")),
         ("Package Needed", doc.get("service")), ("Connection Type", engineer.get("connectionType")),
         ("Distance", engineer.get("distance") if engineer.get("connectionType") == "fibre" else "N/A"),
-        ("Node", engineer.get("node")), ("Survey Comments", engineer.get("comments")),
+        ("Tower" if engineer.get("connectionType") == "wireless" else "Node", engineer.get("tower") if engineer.get("connectionType") == "wireless" else engineer.get("node")), ("Survey Comments", engineer.get("comments")),
         ("Proceed with Installation", "Yes" if engineer.get("proceed") else "No"),
     ]
     for index, (label, value) in enumerate(fields):
@@ -1383,9 +1383,10 @@ def update_pricing():
             raise ValueError(f"Item {index} USD cost must be a number")
         if unit_cost_usd < 0:
             raise ValueError(f"Item {index} USD cost cannot be negative")
-        remarks = str(item.get("remarks") or ("On Demand" if unit_cost_usd == 0 else "OK")).strip()
-        if remarks not in {"OK", "On Demand"}:
-            raise ValueError(f"Item {index} remarks must be OK or On Demand")
+        remarks = str(item.get("remarks") or ("Not Available" if unit_cost_usd == 0 else "Available")).strip()
+        remarks = {"OK": "Available", "On Demand": "Not Available"}.get(remarks, remarks)
+        if remarks not in {"Available", "Not Available"}:
+            raise ValueError(f"Item {index} remarks must be Available or Not Available")
         cleaned_items.append({"id": item_id, "description": description, "unitCostUsd": unit_cost_usd, "remarks": remarks})
 
     STATE["pricing"] = {"usdToTzsRate": rate, "items": cleaned_items}
@@ -1870,7 +1871,7 @@ def survey_engineer_submit(document_id: str):
     user = current_user(); require_department(user, "Engineer")
     doc = find_document(document_id)
     if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
-    require_status(doc, "Pending Engineer", "On Hold")
+    require_status(doc, "Pending Engineer")
     payload = request.get_json(force=True)
     connection_type = str(payload.get("connectionType") or "").lower()
     if connection_type not in {"fibre", "wireless"}: raise ValueError("Connection type must be Fibre or Radiowaves (Wireless)")
@@ -1881,7 +1882,9 @@ def survey_engineer_submit(document_id: str):
         item["costCurrency"] = str(payload.get("currency") or "TZS").upper()
     engineer = {
         "connectionType": connection_type, "distance": require_text(payload, "distance", "Distance") if connection_type == "fibre" else "",
-        "node": require_text(payload, "node", "Node"), "comments": require_text(payload, "comments", "Comments", max_length=1000),
+        "node": require_text(payload, "node", "Node") if connection_type == "fibre" else "",
+        "tower": require_text(payload, "tower", "Tower") if connection_type == "wireless" else "",
+        "comments": require_text(payload, "comments", "Comments", max_length=1000),
         "proceed": proceed == "yes", "clientFeedback": require_text(payload, "clientFeedback", "Client feedback", max_length=1000),
         "speedTest": "", "items": items,
         "currency": str(payload.get("currency") or "TZS").upper(), "submittedBy": user["id"], "submittedByName": user["name"], "submittedByRole": user["role"], "submittedAt": now_iso(),
@@ -1895,12 +1898,29 @@ def survey_engineer_submit(document_id: str):
     })
     doc["survey"] = {"resultNumber": f"SR-{doc['number']}", "generatedAt": now_iso()}
     if not engineer["proceed"]:
-        set_route(doc, "On Hold", "Engineer")
-        doc["history"].append(history(user["id"], "Survey placed on hold", engineer["comments"], user["name"]))
+        set_route(doc, "On Hold", "Sales")
+        doc["history"].append(history(user["id"], "Survey placed on hold", f"Returned to Sales. Reason: {engineer['comments']}", user["name"]))
+        notify("Sales", f"{doc['number']} site survey was placed on hold and returned to Sales.")
     else:
         set_route(doc, "Pending HOC", "HOC")
         doc["history"].append(history(user["id"], "Survey completed", "Survey result generated and sent to HOC for payment confirmation.", user["name"]))
         notify("HOC", f"{doc['number']} is waiting for payment confirmation.")
+    return jsonify(doc)
+
+
+@app.post("/api/documents/<document_id>/survey-sales-review")
+def survey_sales_review(document_id: str):
+    user = current_user(); require_department(user, "Sales")
+    doc = find_document(document_id)
+    if not doc or doc.get("type") != "survey": raise ValueError("Site survey request not found")
+    require_status(doc, "On Hold")
+    payload = request.get_json(force=True)
+    remarks = require_text(payload, "remarks", "Sales remarks", max_length=1000)
+    doc.setdefault("salesReview", {})["remarks"] = remarks
+    doc["salesReview"].update({"reviewedBy": user["id"], "reviewedByName": user["name"], "reviewedByRole": user["role"], "reviewedAt": now_iso()})
+    set_route(doc, "Pending Engineer", "Engineer")
+    doc["history"].append(history(user["id"], "On-hold survey returned to Engineer", remarks, user["name"]))
+    notify("Engineer", f"{doc['number']} was reviewed by Sales and returned for site survey.")
     return jsonify(doc)
 
 

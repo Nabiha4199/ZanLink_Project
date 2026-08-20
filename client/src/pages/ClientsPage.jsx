@@ -246,7 +246,7 @@ export const countryCodes = [
   ["ZW", "Zimbabwe", "+263"],
 ];
 
-const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", plans: "", serviceArea: "", street: "", siteLocation: "", connectionType: "", staticIp: "", locations: [] };
+const emptyClient = { name: "", countryIso: "TZ", contact: "", email: "", serviceArea: "", street: "", siteLocation: "", staticIp: "", locations: [] };
 
 function normalizeTanzaniaContact(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -255,6 +255,12 @@ function normalizeTanzaniaContact(value) {
   if (local.startsWith("0")) local = local.slice(1);
   if (!/^[67]\d{8}$/.test(local)) return "";
   return `+255 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+}
+
+function tanzaniaLocalContact(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("255")) return digits.slice(3);
+  return digits;
 }
 
 export default function ClientsPage({ clients, onRegister, onUpdate }) {
@@ -267,8 +273,8 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
   const [editingClient, setEditingClient] = useState(null);
   const editFormRef = useRef(null);
   const clientDetails = (client) => [
-    client.name, client.contact, client.email, client.plans, client.serviceArea,
-    client.street, client.siteLocation, client.connectionType, client.staticIp,
+    client.name, client.contact, client.email, client.serviceArea,
+    client.street, client.siteLocation, client.staticIp,
     ...(client.locations || []),
   ].filter(Boolean).join(" ").toLowerCase();
   const visible = clients.filter((client) => clientDetails(client).includes(search.toLowerCase()));
@@ -293,11 +299,9 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
       contact,
       email: form.email,
       locations: locationsToSubmit,
-      plans: form.plans,
       serviceArea: form.serviceArea,
       street: form.street,
       siteLocation: form.siteLocation,
-      connectionType: form.connectionType,
       staticIp: form.staticIp,
     }).then(() => {
       setForm(emptyClient);
@@ -312,7 +316,7 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
 
   function saveClient(event) {
     event.preventDefault();
-    const { locationsText, ...client } = editingClient;
+    const { locationsText, plans, connectionType, ...client } = editingClient;
     onUpdate(client.id, {
       ...client,
       locations: locationsText.split(/[\n,]/).map((location) => location.trim()).filter(Boolean),
@@ -334,7 +338,11 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
                 open={countryPickerOpen}
                 selectedIso={form.countryIso}
                 setOpen={setCountryPickerOpen}
-                onChange={(countryIso) => setForm({ ...form, countryIso })}
+                onChange={(countryIso) => setForm({
+                  ...form,
+                  countryIso,
+                  contact: countryIso === "TZ" ? tanzaniaLocalContact(form.contact) : form.contact,
+                })}
               />
               <input
                 inputMode="tel"
@@ -343,21 +351,22 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
                 aria-invalid={!!contactError}
                 pattern={form.countryIso === "TZ" ? "^(?:\\+?255[\\s-]?|0)?[67][0-9]{2}[\\s-]?[0-9]{3}[\\s-]?[0-9]{3}$" : undefined}
                 title={form.countryIso === "TZ" ? "Enter a valid Tanzania number, for example 0712 345 678." : undefined}
-                value={form.contact}
+                value={form.countryIso === "TZ" ? tanzaniaLocalContact(form.contact) : form.contact}
                 onChange={(event) => {
                   setContactError("");
-                  setForm({ ...form, contact: event.target.value });
+                  setForm({
+                    ...form,
+                    contact: form.countryIso === "TZ" ? tanzaniaLocalContact(event.target.value) : event.target.value,
+                  });
                 }}
               />
             </div>
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-          <label>Plan(s)<input value={form.plans} onChange={(event) => setForm({ ...form, plans: event.target.value })} placeholder="For example, DIA 20M" /></label>
           <label>Service Area<input value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} /></label>
           <label>Street<input value={form.street} onChange={(event) => setForm({ ...form, street: event.target.value })} /></label>
           <label>Site Location(s)<input value={form.siteLocation} onChange={(event) => setForm({ ...form, siteLocation: event.target.value })} /></label>
-          <label>Connection Type<input value={form.connectionType} onChange={(event) => setForm({ ...form, connectionType: event.target.value })} placeholder="IP, Radius, Rad/IP/L2" /></label>
           <label>Static IP<input value={form.staticIp} onChange={(event) => setForm({ ...form, staticIp: event.target.value })} placeholder="Yes or No" /></label>
           <LocationPicker form={form} setForm={setForm} query={locationQuery} setQuery={setLocationQuery} error={locationError} setError={setLocationError} />
         </div>
@@ -369,11 +378,9 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
           <label>Client Name<input required value={editingClient.name} onChange={(event) => setEditingClient({ ...editingClient, name: event.target.value })} /></label>
           <label>Contact Number<input value={editingClient.contact || ""} onChange={(event) => setEditingClient({ ...editingClient, contact: event.target.value })} /></label>
           <label>Email Address<input type="email" value={editingClient.email || ""} onChange={(event) => setEditingClient({ ...editingClient, email: event.target.value })} /></label>
-          <label>Plan(s)<input value={editingClient.plans || ""} onChange={(event) => setEditingClient({ ...editingClient, plans: event.target.value })} /></label>
           <label>Service Area<input value={editingClient.serviceArea || ""} onChange={(event) => setEditingClient({ ...editingClient, serviceArea: event.target.value })} /></label>
           <label>Street<input value={editingClient.street || ""} onChange={(event) => setEditingClient({ ...editingClient, street: event.target.value })} /></label>
           <label>Site Location(s)<input value={editingClient.siteLocation || ""} onChange={(event) => setEditingClient({ ...editingClient, siteLocation: event.target.value })} /></label>
-          <label>Connection Type<input value={editingClient.connectionType || ""} onChange={(event) => setEditingClient({ ...editingClient, connectionType: event.target.value })} /></label>
           <label>Static IP<input value={editingClient.staticIp || ""} onChange={(event) => setEditingClient({ ...editingClient, staticIp: event.target.value })} /></label>
           <label className="wide">Request Location(s)<textarea value={editingClient.locationsText} onChange={(event) => setEditingClient({ ...editingClient, locationsText: event.target.value })} placeholder="Separate locations with commas" /></label>
         </div>
@@ -381,17 +388,17 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
       </form>}
       <section className="panel filters client-filters">
         <div className="filter-heading"><div><strong>Registered Clients</strong><span>{clients.length} client(s) total · {visible.length} shown</span></div></div>
-        <input aria-label="Search clients" placeholder="Search name, contact, plan, street, site, email or connection" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input aria-label="Search clients" placeholder="Search name, contact, street, site or email" value={search} onChange={(event) => setSearch(event.target.value)} />
       </section>
       {!visible.length ? <div className="panel empty">No clients match this search.</div> : (
         <div className="table-wrap client-directory-wrap">
           <table className="client-directory-table">
-            <thead><tr><th>#</th><th>Client</th><th>Contact</th><th>Email</th><th>Plan(s)</th><th>Service Area</th><th>Street</th><th>Site Location(s)</th><th>Connection</th><th>Static IP</th><th>Action</th></tr></thead>
+            <thead><tr><th>#</th><th>Client</th><th>Contact</th><th>Email</th><th>Service Area</th><th>Street</th><th>Site Location(s)</th><th>Static IP</th><th>Action</th></tr></thead>
             <tbody>{visible.map((client) => (
               <tr key={client.id}>
                 <td>{clients.indexOf(client) + 1}</td><td><strong>{client.name}</strong></td><td>{client.contact || "—"}</td><td>{client.email || "—"}</td>
-                <td>{client.plans || "—"}</td><td>{client.serviceArea || "—"}</td><td>{client.street || "—"}</td><td>{client.siteLocation || "—"}</td>
-                <td>{client.connectionType || "—"}</td><td>{client.staticIp || "—"}</td><td><button className="btn secondary" type="button" onClick={() => startEditing(client)}>Edit</button></td>
+                <td>{client.serviceArea || "—"}</td><td>{client.street || "—"}</td><td>{client.siteLocation || "—"}</td>
+                <td>{client.staticIp || "—"}</td><td><button className="btn secondary" type="button" onClick={() => startEditing(client)}>Edit</button></td>
               </tr>
             ))}</tbody>
           </table>
