@@ -49,6 +49,7 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
 USD_TO_TZS_RATE = float(os.getenv("USD_TO_TZS_RATE", "2500"))
 CLIENT_CONFIRMATION_USD_LIMIT = 400
 MAX_CONFIRMATION_IMAGE_BYTES = 5 * 1024 * 1024
@@ -443,8 +444,9 @@ def send_email(recipient: str, subject: str, body: str) -> None:
     message["From"] = SMTP_FROM
     message["To"] = recipient
     message.set_content(body)
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
-        if SMTP_USE_TLS:
+    smtp_class = smtplib.SMTP_SSL if SMTP_USE_SSL else smtplib.SMTP
+    with smtp_class(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
+        if SMTP_USE_TLS and not SMTP_USE_SSL:
             smtp.starttls()
         smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
         smtp.send_message(message)
