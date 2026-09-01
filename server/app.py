@@ -69,6 +69,7 @@ USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 REQUEST_NUMBER_PATTERN = re.compile(r"^REQ-(\d{6})$")
 MONTHLY_NUMBER_PATTERN = re.compile(r"^(?:(?P<label>Zanlink)/)?(?P<year>\d{4})/(?P<month>\d{2})/(?:(?P<prefix>[A-Z]+)-)?(?P<value>\d{4,6})$")
 DOCUMENT_NUMBER_PREFIXES = {"doc1": "ONB", "maintenance": "MNT", "survey": "SUR"}
+DEFAULT_TOWERS = ["k/samaki", "Bububu", "One to One", "Bwejuu", "Nungwi - TOA", "Nungwi Office", "Dole", "Masingini Mangapwani / Fujoni"]
 DEFAULT_ITEM_PRICES = [
     {"id": "ITM-001", "description": "1GE ONU 862UB - 8653 FGSW/U", "unitCostUsd": 46}, {"id": "ITM-002", "description": "24V Adaptor", "unitCostUsd": 24},
     {"id": "ITM-003", "description": "48V ADAPTOR", "unitCostUsd": 31}, {"id": "ITM-004", "description": "4F ADSS FIBER OPTIC CABLE", "unitCostUsd": 0},
@@ -126,6 +127,72 @@ DELIVERY_NOTE_TERMS = """If any of the devices above is provided on test basis, 
 2. Client should make payments for any device/accessories or transport cost applicable within 5 days of the Invoice attached with this note. If client fails to settle the bill within this period, ZANLINK will either remove the device from client's premises and/or will deduct any applicable cost from client's subscription costs."""
 
 IMPORTED_CLIENT_PLANS: set[str] = set()
+
+
+def normalized_client_key(value: str | None) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def cleaned_client_locations(locations: list) -> list[str]:
+    cleaned = []
+    seen = set()
+    for location in locations:
+        cleaned_location = " ".join(str(location).split()).strip()
+        key = normalized_client_key(cleaned_location)
+        if cleaned_location and key not in seen:
+            cleaned.append(cleaned_location)
+            seen.add(key)
+    return cleaned
+
+
+def cleaned_towers(towers: list) -> list[str]:
+    cleaned = cleaned_client_locations(towers)
+    if not cleaned:
+        raise ValueError("At least one tower is required")
+    if any(len(tower) > 120 for tower in cleaned):
+        raise ValueError("Each tower must be 120 characters or fewer")
+    return cleaned
+
+
+def merge_client_records(primary: dict, duplicate: dict) -> dict:
+    primary["locations"] = cleaned_client_locations([
+        *(primary.get("locations") or []),
+        *(duplicate.get("locations") or []),
+    ])
+    for field in ("countryIso", "countryDialCode", "contact", "email", "plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp"):
+        if not primary.get(field) and duplicate.get(field):
+            primary[field] = duplicate[field]
+    existing_geo_locations = {
+        normalized_client_key(item.get("location")) for item in primary.get("geoLocations", []) if isinstance(item, dict)
+    }
+    for geo_location in duplicate.get("geoLocations", []) or []:
+        if not isinstance(geo_location, dict):
+            continue
+        key = normalized_client_key(geo_location.get("location"))
+        if key and key not in existing_geo_locations:
+            primary.setdefault("geoLocations", []).append(geo_location)
+            existing_geo_locations.add(key)
+    return primary
+
+
+def deduplicated_clients(clients: list[dict]) -> list[dict]:
+    merged_clients = []
+    clients_by_name = {}
+    for client in clients:
+        client_copy = deepcopy(client)
+        client_copy["locations"] = cleaned_client_locations(client_copy.get("locations") or [])
+        client_copy.setdefault("geoLocations", [])
+        key = normalized_client_key(client_copy.get("name"))
+        if not key:
+            merged_clients.append(client_copy)
+            continue
+        existing_client = clients_by_name.get(key)
+        if existing_client:
+            merge_client_records(existing_client, client_copy)
+        else:
+            clients_by_name[key] = client_copy
+            merged_clients.append(client_copy)
+    return merged_clients
 
 
 def imported_clients() -> list[dict]:
@@ -217,7 +284,7 @@ def imported_clients() -> list[dict]:
                 "createdAt": now_iso(),
                 "imported": True,
             })
-    return clients
+    return deduplicated_clients(clients)
 
 
 USERS = [
@@ -328,7 +395,7 @@ STATE = {
     "documents": [],
     "summaries": [],
     "notifications": [],
-    "pricing": {"usdToTzsRate": USD_TO_TZS_RATE, "items": deepcopy(DEFAULT_ITEM_PRICES)},
+    "pricing": {"usdToTzsRate": USD_TO_TZS_RATE, "items": deepcopy(DEFAULT_ITEM_PRICES), "towers": deepcopy(DEFAULT_TOWERS)},
 }
 
 
@@ -479,6 +546,40 @@ def find_client(client_id: str | None) -> dict | None:
     return next((client for client in STATE["clients"] if client["id"] == client_id), None)
 
 
+def find_client_by_name(name: str, exclude_client_id: str | None = None) -> dict | None:
+    name_key = normalized_client_key(name)
+    return next((
+        client for client in STATE["clients"]
+        if client.get("id") != exclude_client_id and normalized_client_key(client.get("name")) == name_key
+    ), None)
+
+
+def matching_client_location(client: dict, locations: list[str]) -> str | None:
+    existing_locations = {normalized_client_key(location) for location in client.get("locations", [])}
+    return next((location for location in locations if normalized_client_key(location) in existing_locations), None)
+
+
+def ensure_unique_client_locations(name: str, locations: list[str], exclude_client_id: str | None = None) -> None:
+    client_name_key = normalized_client_key(name)
+    for client in STATE["clients"]:
+        if client.get("id") == exclude_client_id or normalized_client_key(client.get("name")) != client_name_key:
+            continue
+        duplicate_location = matching_client_location(client, locations)
+        if duplicate_location:
+            raise ValueError(f"{name} is already registered at {duplicate_location}. Add a different location or edit the existing client.")
+
+
+def ensure_unique_client_email(email: str, name: str, exclude_client_id: str | None = None) -> None:
+    if not email:
+        return
+    client_name_key = normalized_client_key(name)
+    for client in STATE["clients"]:
+        if client.get("id") == exclude_client_id or client.get("email", "").lower() != email:
+            continue
+        if normalized_client_key(client.get("name")) != client_name_key:
+            raise ValueError("A different client with this email is already registered")
+
+
 def registered_client_details(payload: dict) -> tuple[dict, str, str, dict | None]:
     client = find_client(str(payload.get("clientId") or ""))
     if not client:
@@ -490,7 +591,7 @@ def registered_client_details(payload: dict) -> tuple[dict, str, str, dict | Non
     if isinstance(payload_geo_location, dict) and payload_geo_location.get("location") == location:
         geo_location = payload_geo_location
     client["contact"] = contact
-    if location not in client.get("locations", []):
+    if normalized_client_key(location) not in {normalized_client_key(item) for item in client.get("locations", [])}:
         client.setdefault("locations", []).append(location)
     if geo_location and not any(item.get("location") == location for item in client.get("geoLocations", [])):
         client.setdefault("geoLocations", []).append(geo_location)
@@ -1400,6 +1501,7 @@ def account():
 @app.get("/api/pricing")
 def pricing():
     current_user()
+    STATE["pricing"].setdefault("towers", deepcopy(DEFAULT_TOWERS))
     return jsonify(deepcopy(STATE["pricing"]))
 
 
@@ -1440,7 +1542,11 @@ def update_pricing():
             raise ValueError(f"Item {index} remarks must be Available or Not Available")
         cleaned_items.append({"id": item_id, "description": description, "unitCostUsd": unit_cost_usd, "remarks": remarks})
 
-    STATE["pricing"] = {"usdToTzsRate": rate, "items": cleaned_items}
+    towers = payload.get("towers", STATE["pricing"].get("towers") or DEFAULT_TOWERS)
+    if not isinstance(towers, list):
+        raise ValueError("Towers must be a list")
+
+    STATE["pricing"] = {"usdToTzsRate": rate, "items": cleaned_items, "towers": cleaned_towers(towers)}
     return jsonify(deepcopy(STATE["pricing"]))
 
 
@@ -1538,6 +1644,7 @@ def delete_user(user_id: str):
 @app.get("/api/clients")
 def clients():
     current_user()
+    STATE["clients"] = deduplicated_clients(STATE["clients"])
     return jsonify(deepcopy(STATE["clients"]))
 
 
@@ -1554,18 +1661,30 @@ def create_client():
     locations = payload.get("locations")
     if not isinstance(locations, list):
         raise ValueError("Locations must be a list")
-    cleaned_locations = list(dict.fromkeys(str(location).strip() for location in locations if str(location).strip()))
+    cleaned_locations = cleaned_client_locations(locations)
     if not cleaned_locations:
         raise ValueError("Add at least one client location")
     if any(len(location) > 180 for location in cleaned_locations):
         raise ValueError("Each location must be 180 characters or fewer")
     email = normalize_email(payload.get("email"))
-    if any(client.get("email", "").lower() == email for client in STATE["clients"]):
-        raise ValueError("A client with this email is already registered")
+    name = require_text(payload, "name", "Client name")
+    ensure_unique_client_email(email, name)
     contact, country_iso, country_dial_code = normalize_country_contact(payload)
+    existing_client = find_client_by_name(name)
+    if existing_client:
+        merge_client_records(existing_client, {
+            "countryIso": country_iso,
+            "countryDialCode": country_dial_code,
+            "contact": contact,
+            "email": email,
+            "locations": cleaned_locations,
+            **{field: str(payload.get(field) or "").strip() for field in ("plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp")},
+            "geoLocations": [],
+        })
+        return jsonify(deepcopy(existing_client))
     client = {
         "id": f"c-{uuid4()}",
-        "name": require_text(payload, "name", "Client name"),
+        "name": name,
         "countryIso": country_iso,
         "countryDialCode": country_dial_code,
         "contact": contact,
@@ -1589,16 +1708,17 @@ def update_client(client_id: str):
     locations = payload.get("locations")
     if not isinstance(locations, list):
         raise ValueError("Locations must be a list")
-    cleaned_locations = list(dict.fromkeys(str(location).strip() for location in locations if str(location).strip()))
+    cleaned_locations = cleaned_client_locations(locations)
     if any(len(location) > 180 for location in cleaned_locations):
         raise ValueError("Each location must be 180 characters or fewer")
     email = str(payload.get("email") or "").strip()
     email = normalize_email(email) if email else ""
-    if email and any(item["id"] != client_id and item.get("email", "").lower() == email for item in STATE["clients"]):
-        raise ValueError("A client with this email is already registered")
+    name = require_text(payload, "name", "Client name")
+    ensure_unique_client_email(email, name, exclude_client_id=client_id)
+    ensure_unique_client_locations(name, cleaned_locations, exclude_client_id=client_id)
     contact, country_iso, country_dial_code = normalize_country_contact(payload)
     client.update({
-        "name": require_text(payload, "name", "Client name"),
+        "name": name,
         "countryIso": country_iso,
         "countryDialCode": country_dial_code,
         "contact": contact,
@@ -1895,17 +2015,16 @@ def create_survey():
     if existing_client:
         client_name = existing_client["name"]
         contact = existing_client.get("contact") or require_text(payload, "contact", "Mobile number")
-        location = require_text(payload, "location", "Location")
-        if location not in existing_client.get("locations", []):
+        location = " ".join(require_text(payload, "location", "Location").split()).strip()
+        if normalized_client_key(location) not in {normalized_client_key(item) for item in existing_client.get("locations", [])}:
             existing_client.setdefault("locations", []).append(location)
     else:
         client_name = require_text(payload, "clientName", "Client name")
         contact, country_iso, country_dial_code = normalize_country_contact(payload)
-        location = require_text(payload, "location", "Location")
+        location = " ".join(require_text(payload, "location", "Location").split()).strip()
         email = normalize_email(payload.get("email"))
-        existing_client = next((client for client in STATE["clients"] if client.get("email", "").lower() == email and email), None)
-        if existing_client:
-            raise ValueError("A client with this email is already registered. Select the client from the list.")
+        ensure_unique_client_email(email, client_name)
+        ensure_unique_client_locations(client_name, [location])
         existing_client = {
             "id": f"c-{uuid4()}",
             "name": client_name,
@@ -1947,10 +2066,13 @@ def survey_engineer_submit(document_id: str):
     items = validate_items(payload.get("items", []), context="Survey equipment")
     for item in items:
         item["costCurrency"] = str(payload.get("currency") or "TZS").upper()
+    tower = require_text(payload, "tower", "Tower") if connection_type == "wireless" else ""
+    if tower and normalized_client_key(tower) not in {normalized_client_key(item) for item in STATE["pricing"].get("towers", DEFAULT_TOWERS)}:
+        raise ValueError("Select a tower from the approved tower list")
     engineer = {
         "connectionType": connection_type, "distance": require_text(payload, "distance", "Distance") if connection_type == "fibre" else "",
         "node": require_text(payload, "node", "Node") if connection_type == "fibre" else "",
-        "tower": require_text(payload, "tower", "Tower") if connection_type == "wireless" else "",
+        "tower": tower,
         "comments": require_text(payload, "comments", "Comments", max_length=1000),
         "proceed": proceed == "yes", "clientFeedback": require_text(payload, "clientFeedback", "Client feedback", max_length=1000),
         "speedTest": "", "items": items,
