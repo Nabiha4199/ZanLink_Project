@@ -232,8 +232,10 @@ def imported_clients() -> list[dict]:
         return []
     clients = []
     header_aliases = {
-        "full name": "name", "phone number": "contact", "internet plans": "plans", "location": "serviceArea",
-        "email": "email", "street": "street", "site location": "siteLocation", "rad/ip/l2": "connectionType",
+        "full name": "name", "client name": "name", "customer name": "name", "phone number": "contact",
+        "phone": "contact", "internet plans": "plans", "location": "serviceArea", "service area": "serviceArea",
+        "service location": "serviceArea", "email": "email", "email address": "email", "street": "street",
+        "site location": "siteLocation", "rad/ip/l2": "connectionType",
         "static ip": "staticIp",
     }
     default_columns = {
@@ -243,23 +245,47 @@ def imported_clients() -> list[dict]:
     for sheet_index, sheet in enumerate(sheets, start=1):
         column_map = default_columns
         for row in sheet.iter(f"{namespace}row"):
-            values = {}
             row_text_by_column = {}
             for cell in row.iter(f"{namespace}c"):
                 text = cell_text(cell, strings).strip()
                 column_index = column_number(cell.get("r", ""))
                 row_text_by_column[column_index] = text
-                field = column_map.get(column_index)
-                if field:
-                    values[field] = text
             normalized_headers = {index: " ".join(value.replace("\u00a0", " ").split()).lower() for index, value in row_text_by_column.items()}
-            if any(value == "full name" for value in normalized_headers.values()):
-                column_map = {index: header_aliases[value] for index, value in normalized_headers.items() if value in header_aliases}
+            if any(value in {"full name", "client name", "customer name"} for value in normalized_headers.values()):
+                detected_columns = {index: header_aliases[value] for index, value in normalized_headers.items() if value in header_aliases}
+                # A few copied workbook sections label column E as "Email" even
+                # though their rows still use the normal Location, Email, Street
+                # order.  Only trust a custom header when it explicitly identifies
+                # the service-area column; otherwise use that verified standard
+                # layout and keep all three fields aligned.
+                column_map = detected_columns if "serviceArea" in detected_columns.values() else default_columns
                 continue
+
+            record_column_map = column_map
+            # One sheet begins with an extra recurring-price column, then later
+            # continues in the standard layout without another header.  An email
+            # in column F (or an area in E with an empty F) identifies that switch.
+            if column_map.get(6) == "serviceArea" and column_map.get(7) == "email":
+                email_in_standard_column = EMAIL_PATTERN.fullmatch(row_text_by_column.get(6, "").lower())
+                standard_empty_email = bool(row_text_by_column.get(5)) and not row_text_by_column.get(6)
+                if email_in_standard_column or standard_empty_email:
+                    record_column_map = default_columns
+            values = {
+                field: text
+                for column_index, text in row_text_by_column.items()
+                if (field := record_column_map.get(column_index))
+            }
             if not values.get("name"):
                 continue
             for field in ("name", "contact", "plans", "serviceArea", "email", "street", "siteLocation", "connectionType", "staticIp"):
                 values.setdefault(field, "")
+            # Some older workbook sections had the Email and Service Area columns
+            # transposed. Correct only the unmistakable case, so genuine values are
+            # never overwritten.
+            service_area_is_email = bool(EMAIL_PATTERN.fullmatch(values["serviceArea"].strip().lower()))
+            email_is_email = bool(EMAIL_PATTERN.fullmatch(values["email"].strip().lower()))
+            if service_area_is_email and not email_is_email:
+                values["serviceArea"], values["email"] = values["email"], values["serviceArea"]
             for plan in values["plans"].replace("\u00a0", " ").split(","):
                 if plan.strip() and plan.strip().lower() != "internet plans":
                     IMPORTED_CLIENT_PLANS.add(plan.strip())
