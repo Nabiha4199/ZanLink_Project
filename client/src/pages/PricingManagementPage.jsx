@@ -29,10 +29,17 @@ function remarksValue(item, index) {
 
 export default function PricingManagementPage({ pricing, onSave }) {
   const [form, setForm] = useState(pricing);
+  const [itemSearch, setItemSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const itemQuery = itemSearch.trim().toLowerCase();
+  const visibleItems = form.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !itemQuery || `${item.id} ${item.description}`.toLowerCase().includes(itemQuery));
 
-  useEffect(() => setForm(pricing), [pricing]);
+  useEffect(() => {
+    setForm(pricing);
+  }, [pricing]);
 
   function updateItem(index, unitCostUsd) {
     setForm({
@@ -89,12 +96,16 @@ export default function PricingManagementPage({ pricing, onSave }) {
           </label>
         </div>
         <div className="table-wrap">
+          <label className="equipment-search equipment-list-search">
+            Search Equipment
+            <input type="search" value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder="Search item ID or description" />
+          </label>
           <table>
             <thead>
               <tr><th /><th>Inventory Valuation</th><th colSpan="2">Selling Cost</th><th /><th /></tr>
               <tr><th>S/N</th><th>Item Description</th><th>Unit Cost in USD Excl VAT</th><th>Selling Price VAT Incl 18%</th><th>Remarks</th><th>Converted Cost (TZS)</th></tr>
             </thead>
-            <tbody>{form.items.map((item, index) => (
+            <tbody>{visibleItems.map(({ item, index }) => (
               <tr key={item.id}>
                 <td>{index + 1}</td>
                 <td>{item.description}</td>

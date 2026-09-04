@@ -430,8 +430,8 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
             </div>
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
+          <label>Location<input value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} /></label>
           <label>Email Address<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-          <label>Service Area<input value={form.serviceArea} onChange={(event) => setForm({ ...form, serviceArea: event.target.value })} /></label>
           <label>Street<input value={form.street} onChange={(event) => setForm({ ...form, street: event.target.value })} /></label>
           <label>Site Location(s)<input value={form.siteLocation} onChange={(event) => setForm({ ...form, siteLocation: event.target.value })} /></label>
           <label>Static IP<input value={form.staticIp} onChange={(event) => setForm({ ...form, staticIp: event.target.value })} placeholder="Yes or No" /></label>
@@ -468,8 +468,8 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
             </div>
             {contactError && <small className="field-error">{contactError}</small>}
           </label>
+          <label>Location<input value={editingClient.serviceArea || ""} onChange={(event) => setEditingClient({ ...editingClient, serviceArea: event.target.value })} /></label>
           <label>Email Address<input type="email" value={editingClient.email || ""} onChange={(event) => setEditingClient({ ...editingClient, email: event.target.value })} /></label>
-          <label>Service Area<input value={editingClient.serviceArea || ""} onChange={(event) => setEditingClient({ ...editingClient, serviceArea: event.target.value })} /></label>
           <label>Street<input value={editingClient.street || ""} onChange={(event) => setEditingClient({ ...editingClient, street: event.target.value })} /></label>
           <label>Site Location(s)<input value={editingClient.siteLocation || ""} onChange={(event) => setEditingClient({ ...editingClient, siteLocation: event.target.value })} /></label>
           <label>Static IP<input value={editingClient.staticIp || ""} onChange={(event) => setEditingClient({ ...editingClient, staticIp: event.target.value })} /></label>
@@ -484,11 +484,11 @@ export default function ClientsPage({ clients, onRegister, onUpdate }) {
       {!visible.length ? <div className="panel empty">No clients match this search.</div> : (
         <div className="table-wrap client-directory-wrap">
           <table className="client-directory-table">
-            <thead><tr><th>#</th><th>Client</th><th>Contact</th><th>Email</th><th>Service Area</th><th>Street</th><th>Site Location(s)</th><th>Static IP</th><th>Action</th></tr></thead>
+            <thead><tr><th>#</th><th>Client</th><th>Contact</th><th>Location</th><th>Email</th><th>Street</th><th>Site Location(s)</th><th>Static IP</th><th>Action</th></tr></thead>
             <tbody>{visible.map((client) => (
               <tr key={client.id}>
-                <td>{clients.indexOf(client) + 1}</td><td><strong>{client.name}</strong></td><td>{client.contact || "—"}</td><td>{client.email || "—"}</td>
-                <td>{client.serviceArea || "—"}</td><td>{client.street || "—"}</td><td>{client.siteLocation || "—"}</td>
+                <td>{clients.indexOf(client) + 1}</td><td><strong>{client.name}</strong></td><td>{client.contact || "—"}</td><td>{client.serviceArea || "—"}</td>
+                <td>{client.email || "—"}</td><td>{client.street || "—"}</td><td>{client.siteLocation || "—"}</td>
                 <td>{client.staticIp || "—"}</td><td><button className="btn secondary" type="button" onClick={() => startEditing(client)}>Edit</button></td>
               </tr>
             ))}</tbody>

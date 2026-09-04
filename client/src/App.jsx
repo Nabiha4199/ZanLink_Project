@@ -19,6 +19,7 @@ function mergePricingCatalog(pricingData) {
   const savedItems = Array.isArray(pricingData?.items) ? pricingData.items : [];
   const savedById = new Map(savedItems.map((item) => [item.id, item]));
   const defaultIds = new Set(defaultPricing.items.map((item) => item.id));
+  const savedTowers = Array.isArray(pricingData?.towers) ? pricingData.towers : [];
   return {
     ...defaultPricing,
     ...pricingData,
@@ -26,7 +27,47 @@ function mergePricingCatalog(pricingData) {
       ...defaultPricing.items.map((item) => ({ ...item, ...(savedById.get(item.id) || {}) })),
       ...savedItems.filter((item) => !defaultIds.has(item.id)),
     ],
+    towers: savedTowers.length ? savedTowers : defaultPricing.towers,
   };
+}
+
+function normalizedClientKey(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function uniqueClientLocations(locations = []) {
+  const seen = new Set();
+  return locations.reduce((cleaned, location) => {
+    const cleanLocation = String(location || "").trim().replace(/\s+/g, " ");
+    const key = normalizedClientKey(cleanLocation);
+    if (cleanLocation && !seen.has(key)) {
+      cleaned.push(cleanLocation);
+      seen.add(key);
+    }
+    return cleaned;
+  }, []);
+}
+
+function deduplicateClients(clientData = []) {
+  const clientsByName = new Map();
+  return clientData.reduce((mergedClients, client) => {
+    const normalizedName = normalizedClientKey(client.name);
+    const cleanClient = {
+      ...client,
+      locations: uniqueClientLocations(client.locations || []),
+    };
+    const existingClient = clientsByName.get(normalizedName);
+    if (normalizedName && existingClient) {
+      existingClient.locations = uniqueClientLocations([...existingClient.locations, ...cleanClient.locations]);
+      ["countryIso", "countryDialCode", "contact", "email", "plans", "serviceArea", "street", "siteLocation", "connectionType", "staticIp"].forEach((field) => {
+        if (!existingClient[field] && cleanClient[field]) existingClient[field] = cleanClient[field];
+      });
+      return mergedClients;
+    }
+    if (normalizedName) clientsByName.set(normalizedName, cleanClient);
+    mergedClients.push(cleanClient);
+    return mergedClients;
+  }, []);
 }
 
 function App() {
@@ -61,7 +102,7 @@ function App() {
     setDocuments(docs);
     setSummaries(summaryData);
     setReports(reportData);
-    setClients(clientData);
+    setClients(deduplicateClients(clientData));
     setClientPlans(clientPlanData);
     setUsers(userData);
     setPricing(mergePricingCatalog(pricingData));
@@ -214,7 +255,7 @@ function App() {
       <main className="main">
         {user.microsoftLinked && !user.hasPassword && <PasswordSetupCard onSubmit={setAccountPassword} />}
         {selected ? (
-          <DocumentDetail user={user} doc={selected} onBack={() => setSelectedId(null)} run={run} />
+          <DocumentDetail user={user} doc={selected} pricing={pricing} onBack={() => setSelectedId(null)} run={run} />
         ) : view === "doc1" ? (
           <Doc1Form clients={clients} pricing={pricing} onCancel={() => navigate("dashboard")} onSubmit={(payload) => run(() => api.createDoc1(user, payload), "Document submitted to Sales.")} />
         ) : view === "maintenance" ? (
@@ -406,7 +447,7 @@ function printElementsByIds(printIds) {
   }
 }
 
-function DocumentDetail({ user, doc, onBack, run }) {
+function DocumentDetail({ user, doc, pricing, onBack, run }) {
   const managementReview = false;
   const doc1PendingManagement = doc.type === "doc1" && doc.status === "Pending Management";
   const doc1Completed = doc.type === "doc1" && doc.status === "Completed";
@@ -424,9 +465,9 @@ function DocumentDetail({ user, doc, onBack, run }) {
       ) : maintenanceCompleted ? (
         <MaintenanceCertificate user={user} doc={doc} />
       ) : doc.type === "survey" && doc.status === "Completed" ? (
-        <SurveyActions user={user} doc={doc} run={run} />
+        <SurveyActions user={user} doc={doc} pricing={pricing} run={run} />
       ) : doc.type === "survey" ? (
-        <><section className="panel"><div className="section-title"><h2>Site Survey Workflow</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div><div className="form-grid"><p><strong>Current Department</strong><br />{doc.currentDepartment}</p><p><strong>Requested Package</strong><br />{doc.service}</p></div></section><SurveyActions user={user} doc={doc} run={run} /><History doc={doc} /></>
+        <><section className="panel"><div className="section-title"><h2>Site Survey Workflow</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div><div className="form-grid"><p><strong>Current Department</strong><br />{doc.currentDepartment}</p><p><strong>Requested Package</strong><br />{doc.service}</p></div></section><SurveyActions user={user} doc={doc} pricing={pricing} run={run} /><History doc={doc} /></>
       ) : (
         <>
           <section className="panel"><div className="section-title"><h2>Workflow State</h2><span className={`status ${statusClass(doc.status)}`}>{doc.status}</span></div><div className="form-grid"><p><strong>Current Department</strong><br />{doc.currentDepartment}</p><p><strong>Location</strong><br />{doc.location}</p></div></section>
@@ -766,7 +807,7 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
   );
 }
 
-function SurveyActions({ user, doc, run }) {
+function SurveyActions({ user, doc, pricing, run }) {
   const engineerOpen = canAct(user, "Engineer") && doc.status === "Pending Engineer";
   const salesReviewOpen = canAct(user, "Sales") && doc.status === "On Hold";
   const hocOpen = canAct(user, "HOC") && doc.status === "Pending HOC";
@@ -796,12 +837,13 @@ function SurveyActions({ user, doc, run }) {
   const engineerUser = user.role === "Engineer" || user.department === "Engineer";
   const speedTestOpen = engineerUser && doc.status === "Pending Management";
   const [speedTest, setSpeedTest] = useState(doc.engineer?.speedTest || "");
+  const towerOptions = pricing?.towers?.length ? pricing.towers : defaultPricing.towers;
   return <>
     {speedTestOpen && <ActionPanel title="Work Order Speed Test" enabled initiallyEditing actionLabel="Save Speed Test" onAction={() => run(() => api.surveySpeedTest(user, doc.id, { speedTest }), "Speed test recorded on the work order.")}><label>Speed Test Obtained<input required value={speedTest} onChange={(event) => setSpeedTest(event.target.value)} /></label></ActionPanel>}
     {canPrint && <section className="panel"><div className="section-title"><h2>Survey Documents</h2><span>{showDocumentPack ? "Ready for Management review" : "Available before Management approval"}</span></div><div className="button-row">{(canAct(user, "Engineer") || canAct(user, "HOC")) && <button className="btn" type="button" onClick={() => printElementById(surveyResultPrintId)}>Print Survey Result</button>}<button className="btn secondary" type="button" onClick={() => printElementById(stockPrintId)}>Print Stock Requisition</button><button className="btn secondary" type="button" onClick={() => printElementById(workOrderPrintId)}>Print Work Order</button><button className="btn" type="button" onClick={() => printElementsByIds(surveyDocumentPrintIds)}>Print All</button></div><div className={showDocumentPack ? "document-preview-grid" : ""}><SurveyResultPreview doc={doc} printId={surveyResultPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><StockRequisitionPreview doc={doc} printId={stockPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} /><WorkOrderPreview doc={doc} printId={workOrderPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />{doc.paymentConfirmation?.dataUrl && <PaymentConfirmationPreview doc={doc} printId={paymentConfirmationPrintId} extraClass={showDocumentPack ? "" : "print-only-document"} />}</div></section>}
     {!completedSurvey && canAct(user, "Engineer") && (!postStoreReview || managementViewer) && <ActionPanel title="Engineer Site Survey" enabled={engineerOpen} initiallyEditing={engineerOpen} actionLabel="Submit Survey Result" onAction={() => run(() => api.surveyEngineer(user, doc.id, engineer), engineer.proceed === "no" ? "Survey placed on hold and returned to Sales." : "Survey result submitted to HOC.")}>
-      <div className="form-grid"><label>Connection Type<select value={engineer.connectionType} onChange={(event) => setEngineer({ ...engineer, connectionType: event.target.value })}><option value="fibre">Fibre</option><option value="wireless">Radiowaves (Wireless)</option></select></label>{engineer.connectionType === "fibre" && <label>Distance<input required value={engineer.distance} onChange={(event) => setEngineer({ ...engineer, distance: event.target.value })} /></label>}{engineer.connectionType === "fibre" ? <label>Node<input required value={engineer.node} onChange={(event) => setEngineer({ ...engineer, node: event.target.value })} /></label> : <label>Tower<input required value={engineer.tower} onChange={(event) => setEngineer({ ...engineer, tower: event.target.value })} /></label>}<label>Currency<select value={engineer.currency} onChange={(event) => setEngineer({ ...engineer, currency: event.target.value })}><option>TZS</option><option>USD</option></select></label><label>Proceed?<select value={engineer.proceed} onChange={(event) => setEngineer({ ...engineer, proceed: event.target.value })}><option value="yes">Yes</option><option value="no">No</option></select></label><label className="wide">Comments<textarea required value={engineer.comments} onChange={(event) => setEngineer({ ...engineer, comments: event.target.value })} /></label><label>Client Feedback<input required value={engineer.clientFeedback} onChange={(event) => setEngineer({ ...engineer, clientFeedback: event.target.value })} /></label></div>
-      <ItemEditor items={engineer.items} setItems={(items) => setEngineer({ ...engineer, items })} engineerRequest currency={engineer.currency} />
+      <div className="form-grid"><label>Connection Type<select value={engineer.connectionType} onChange={(event) => setEngineer({ ...engineer, connectionType: event.target.value })}><option value="fibre">Fibre</option><option value="wireless">Radiowaves (Wireless)</option></select></label>{engineer.connectionType === "fibre" && <label>Distance<input required value={engineer.distance} onChange={(event) => setEngineer({ ...engineer, distance: event.target.value })} /></label>}{engineer.connectionType === "fibre" ? <label>Node<input required value={engineer.node} onChange={(event) => setEngineer({ ...engineer, node: event.target.value })} /></label> : <label>Tower<input list="survey-tower-options" required value={engineer.tower} onChange={(event) => setEngineer({ ...engineer, tower: event.target.value })} /><datalist id="survey-tower-options">{towerOptions.map((tower) => <option key={tower} value={tower} />)}</datalist></label>}<label>Currency<select value={engineer.currency} onChange={(event) => setEngineer({ ...engineer, currency: event.target.value })}><option>TZS</option><option>USD</option></select></label><label>Proceed?<select value={engineer.proceed} onChange={(event) => setEngineer({ ...engineer, proceed: event.target.value })}><option value="yes">Yes</option><option value="no">No</option></select></label><label className="wide">Comments<textarea required value={engineer.comments} onChange={(event) => setEngineer({ ...engineer, comments: event.target.value })} /></label><label>Client Feedback<input required value={engineer.clientFeedback} onChange={(event) => setEngineer({ ...engineer, clientFeedback: event.target.value })} /></label></div>
+      <ItemEditor items={engineer.items} setItems={(items) => setEngineer({ ...engineer, items })} engineerRequest pricing={pricing} currency={engineer.currency} />
     </ActionPanel>}
     {!completedSurvey && canAct(user, "Sales") && <ActionPanel title="Sales On-Hold Review" enabled={salesReviewOpen} initiallyEditing={salesReviewOpen} actionLabel="Return to Engineer" onAction={() => run(() => api.surveySalesReview(user, doc.id, { remarks: salesReviewRemarks }), "Survey returned to Engineer.")}>
       <div className="form-grid">
@@ -1211,9 +1253,12 @@ function ItemEditor({ items, setItems, locked = false, requestMode = false, engi
 function EngineerItemEditor({ items, setItems, pricing, currency }) {
   const pageSize = 5;
   const [page, setPage] = useState(0);
+  const [equipmentSearch, setEquipmentSearch] = useState("");
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const startIndex = page * pageSize;
   const visibleItems = items.slice(startIndex, startIndex + pageSize);
+  const equipmentQuery = equipmentSearch.trim().toLowerCase();
+  const filteredPricingItems = pricing.items.filter((item) => !equipmentQuery || `${item.id} ${item.description}`.toLowerCase().includes(equipmentQuery));
 
   useEffect(() => {
     if (page >= totalPages) setPage(totalPages - 1);
@@ -1240,12 +1285,19 @@ function EngineerItemEditor({ items, setItems, pricing, currency }) {
   return (
     <div className="items-list">
       <div className="section-title"><h2>Stock Items</h2></div>
+      <label className="equipment-search">
+        Search Equipment
+        <input type="search" value={equipmentSearch} onChange={(event) => setEquipmentSearch(event.target.value)} placeholder="Search item ID or description" />
+      </label>
       <div className="table-wrap engineer-items-table">
         <table>
           <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Unit Cost ({currency})</th><th>Purpose</th><th>Total</th><th>Action</th></tr></thead>
           <tbody>
             {visibleItems.map((item, visibleIndex) => {
               const itemIndex = startIndex + visibleIndex;
+              const optionItems = filteredPricingItems.some((stockItem) => stockItem.description === item.name)
+                ? filteredPricingItems
+                : [...filteredPricingItems, ...pricing.items.filter((stockItem) => stockItem.description === item.name)];
               return (
                 <tr key={itemIndex}>
                   <td>{itemIndex + 1}</td>
@@ -1258,7 +1310,7 @@ function EngineerItemEditor({ items, setItems, pricing, currency }) {
                       onChange={(event) => updateDescription(itemIndex, event.target.value)}
                     >
                       <option value="">Select an item</option>
-                      {pricing.items.map((stockItem) => (
+                      {optionItems.map((stockItem) => (
                         <option key={stockItem.id} value={stockItem.description}>
                           {stockItem.description}
                         </option>

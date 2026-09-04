@@ -110,6 +110,7 @@ export const engineerStockItems = [
 export const defaultPricing = {
   usdToTzsRate: 2500,
   items: engineerStockItems.map(({ id, description, unitCost }) => ({ id, description, unitCostUsd: unitCost })),
+  towers: ["k/samaki", "Bububu", "One to One", "Bwejuu", "Nungwi - TOA", "Nungwi Office", "Dole", "Masingini Mangapwani / Fujoni"],
 };
 
 export const serviceTypes = [
