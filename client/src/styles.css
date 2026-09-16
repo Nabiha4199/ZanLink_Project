@@ -1313,6 +1313,112 @@
   background: transparent;
 }
 
+.maintenance-stock-form .paper-head.stock {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  min-height: 145px;
+  margin: 0 0 8px;
+  position: relative;
+}
+
+.maintenance-stock-form .paper-head.stock > div {
+  text-align: right;
+}
+
+.maintenance-stock-form .paper-head.stock h2 {
+  margin-top: 105px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.maintenance-stock-form .paper-head.stock p {
+  position: absolute;
+  top: 38px;
+  right: 36px;
+  color: #111827;
+  line-height: 2.9;
+  text-align: right;
+}
+
+.maintenance-stock-form .narration {
+  min-height: 125px;
+}
+
+.maintenance-stock-form .narration p {
+  margin: 9px 0 0;
+  text-align: left;
+  font-size: 13px;
+}
+
+.maintenance-stock-form .signature-grid {
+  gap: 23px;
+}
+
+.maintenance-stock-form .signature-row {
+  grid-template-columns: 145px repeat(3, minmax(0, 1fr));
+}
+
+.maintenance-stock-form .signature-row span {
+  border-top: 1px dotted #64748b;
+  padding-top: 4px;
+}
+
+.certificate-form {
+  padding: 34px;
+}
+
+.certificate-form .certificate-logo {
+  color: #159bd3;
+  font-size: 44px;
+  font-weight: 800;
+  text-align: right;
+  margin: 0 0 72px;
+}
+
+.certificate-form .certificate-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.certificate-form h2 {
+  margin: 42px 0;
+  color: #4b5563;
+  text-align: center;
+  font-size: 20px;
+  text-transform: uppercase;
+}
+
+.certificate-form .certificate-intro {
+  margin: 0 0 44px;
+  color: #4b5563;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.certificate-form > p {
+  color: #4b5563;
+  font-size: 17px;
+}
+
+.certificate-form h3 {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: #4b5563;
+}
+
+.certificate-form .certificate-signoff {
+  display: grid;
+  gap: 13px;
+  margin-top: 30px;
+  color: #4b5563;
+  font-size: 16px;
+}
+
 .client-delivery {
   color: #1f2937;
 }

@@ -26,7 +26,7 @@ except ModuleNotFoundError:
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table
 from reportlab.platypus import TableStyle
@@ -1155,9 +1155,11 @@ def build_stock_requisition_pdf(doc: dict) -> BytesIO:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
-    draw_header(pdf, "STOCK REQUISITION FORM", doc)
     is_maintenance = doc.get("type") == "maintenance"
     is_survey = doc.get("type") == "survey"
+    if is_maintenance:
+        return build_maintenance_stock_requisition_pdf(doc)
+    draw_header(pdf, "STOCK REQUISITION FORM", doc)
     engineer_name = doc.get("createdByName") or doc.get("engineer", {}).get("submittedByName") or user_display_name(doc.get("createdBy"), "Engineer")
     accounts_name = doc.get("accounts", {}).get("processedByName") or user_display_name(doc.get("accounts", {}).get("processedBy"), "Accounts")
     store_name = doc.get("store", {}).get("approvedByName") or user_display_name(doc.get("store", {}).get("approvedBy"), "Store")
@@ -1425,30 +1427,35 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
+    document_date = parse_iso(doc.get("createdAt"))
+    certificate_date = document_date or datetime.now()
+    date_text = f"{certificate_date.day}/{certificate_date.month}/{certificate_date.year}"
     pdf.setFont("Helvetica-Bold", 24)
-    pdf.setFillColor(colors.HexColor("#b8c1cc"))
-    pdf.drawRightString(width - 22 * mm, height - 24 * mm, "zanlink")
+    pdf.setFillColor(colors.HexColor("#159bd3"))
+    pdf.drawRightString(width - 25 * mm, height - 24 * mm, "zanlink")
     pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica", 8)
-    pdf.drawString(22 * mm, height - 44 * mm, f"Date: {datetime.now().strftime('%d/%m/%Y')}")
-    pdf.drawRightString(width - 22 * mm, height - 44 * mm, f"General Maintenance No: Zanlink/{doc['number']}")
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(8 * mm, height - 52 * mm, f"Date:{date_text}")
+    pdf.drawRightString(width - 25 * mm, height - 52 * mm, f"Certificate No:Zanlink/{doc['number']}")
 
     pdf.setFont("Helvetica-Bold", 12)
-    pdf.drawCentredString(width / 2, height - 58 * mm, "GENERAL MAINTENANCE")
-    pdf.setFont("Helvetica", 9)
+    pdf.setFillColor(colors.HexColor("#4b5563"))
+    pdf.drawCentredString(width / 2, height - 72 * mm, "CERTIFICATE OF COMPLETION")
+    pdf.setFont("Helvetica-Bold", 9)
     text = (
-        f"This confirms that the general maintenance work was completed successfully at {doc.get('clientName', '')} "
-        f"and the below materials were issued through requisition no. {doc['number']}."
+        f"This is to confirm and certify that the job was done successfully at {doc.get('clientName', '')} Tower/Node/Site and "
+        f"the below materials were issued through requisition no.{doc['number']}."
     )
-    wrapped = [text[i : i + 95] for i in range(0, len(text), 95)]
-    y = height - 74 * mm
+    wrapped = simpleSplit(text, "Helvetica-Bold", 9, width - 26 * mm)
+    y = height - 94 * mm
     for line in wrapped:
         pdf.drawCentredString(width / 2, y, line)
         y -= 5 * mm
 
+    pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(22 * mm, y - 6 * mm, f"SITE NAME: {doc.get('clientName', '')}")
-    pdf.drawString(22 * mm, y - 22 * mm, "MATERIALS USED")
+    pdf.drawString(7 * mm, y - 12 * mm, f"SITE NAME: {doc.get('clientName', '')}")
+    pdf.drawString(7 * mm, y - 31 * mm, "MATERIALS USED")
 
     rows = [["S/N", "ITEM ID", "DESCRIPTION", "QUANTITY REQUESTED", "QUANTITY ISSUED"]]
     for index, item in enumerate(doc.get("maintenance", {}).get("items", []), start=1):
@@ -1476,18 +1483,67 @@ def build_maintenance_certificate_pdf(doc: dict) -> BytesIO:
         )
     )
     table.wrapOn(pdf, width, height)
-    table.drawOn(pdf, 22 * mm, y - 50 * mm)
+    table.drawOn(pdf, 7 * mm, y - 50 * mm)
 
     y -= 64 * mm
-    pdf.setFont("Helvetica", 8)
-    pdf.drawString(22 * mm, y, "The site has been inspected for the completion of the job carried.")
-    pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(22 * mm, y - 12 * mm, "Head of Department")
-    pdf.setFont("Helvetica", 9)
-    approved_by = find_user(doc.get("hod", {}).get("approvedBy"))
-    approved_by_name = doc.get("hod", {}).get("approvedByName") or (approved_by["name"] if approved_by else "Pending approval")
-    pdf.drawString(22 * mm, y - 24 * mm, f"Name: {approved_by_name}")
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(7 * mm, y, "The site has been inspected for the completion of the job carried")
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFillColor(colors.HexColor("#4b5563"))
+    pdf.drawString(7 * mm, y - 13 * mm, "Certified by Head of Department")
+    pdf.drawString(7 * mm, y - 27 * mm, "Name:--------------------")
+    pdf.drawString(7 * mm, y - 41 * mm, "Signature:--------------")
+    pdf.drawString(7 * mm, y - 55 * mm, "Date:-------------------")
 
+    pdf.showPage()
+    pdf.save()
+    return buffer
+
+
+def build_maintenance_stock_requisition_pdf(doc: dict) -> BytesIO:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    document_date = parse_iso(doc.get("createdAt"))
+    requisition_date = document_date or datetime.now()
+    date_text = f"{requisition_date.day}/{requisition_date.month}/{requisition_date.year}"
+    pdf.setFont("Helvetica-Bold", 24)
+    pdf.setFillColor(colors.HexColor("#159bd3"))
+    pdf.drawString(8 * mm, height - 24 * mm, "zanlink")
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawRightString(width - 25 * mm, height - 22 * mm, f"GM-Requisition Date:{date_text}")
+    pdf.drawRightString(width - 25 * mm, height - 40 * mm, f"GM-Requisition No:  {doc['number']}")
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.setFillColor(colors.HexColor("#4b5563"))
+    pdf.drawCentredString(width / 2, height - 67 * mm, "STOCK REQUISITION FORM")
+
+    rows = [["S/N", "ITEM ID", "DESCRIPTION", "QUANTITY REQUESTED", "QUANTITY ISSUED"]]
+    for index, item in enumerate(doc.get("maintenance", {}).get("items", []), start=1):
+        rows.append([str(index), item.get("itemId") or item.get("serialNumber") or "-", item.get("name") or "-", str(item.get("requestedQty") or "-"), str(item.get("issuedQty") or "")])
+    if len(rows) == 1:
+        rows.append(["1", "-", "-", "-", ""])
+    table = Table(rows, colWidths=[12 * mm, 28 * mm, 78 * mm, 42 * mm, 35 * mm])
+    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.black), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7.5), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    table.wrapOn(pdf, width, height)
+    table.drawOn(pdf, 8 * mm, height - 106 * mm)
+    narration_bottom = height - 150 * mm
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(9 * mm, narration_bottom + 35 * mm, "Narration:")
+    pdf.rect(8 * mm, narration_bottom, 187 * mm, 40 * mm, stroke=1, fill=0)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(10 * mm, narration_bottom + 27 * mm, doc.get("maintenance", {}).get("action") or "")
+    labels = ["Requested by", "Approved by", "Issued by", "Received by"]
+    y = narration_bottom - 18 * mm
+    for label in labels:
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(8 * mm, y, f"{label}:")
+        for x, caption in [(40, "Name"), (77, "Position"), (112, "Signature"), (151, "Date")]:
+            pdf.setFont("Helvetica", 7)
+            pdf.line(x * mm, y + 4, (x + 25) * mm, y + 4)
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawString(x * mm, y - 3 * mm, caption)
+        y -= 24 * mm
     pdf.showPage()
     pdf.save()
     return buffer

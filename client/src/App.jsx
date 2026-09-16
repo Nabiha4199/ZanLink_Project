@@ -780,17 +780,17 @@ function StockRequisitionPreview({ doc, printId, extraClass = "" }) {
       ["Approved by", actorName(doc.management?.approvedByName, doc.management?.approvedBy, "Not recorded"), doc.management?.approvedByRole || "Management", doc.management?.approvedAt],
     ];
   return (
-    <article id={printId} className={`paper-form ${extraClass}`}>
-      <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>{isMaintenance ? "General Maintenance No." : isSurvey ? "Survey Requisition No." : "Install Requisition No."} {doc.number}</p></div></header>
+    <article id={printId} className={`paper-form ${isMaintenance ? "maintenance-stock-form" : ""} ${extraClass}`}>
+      <header className="paper-head stock"><span className="paper-logo">zanlink</span><div><h2>Stock Requisition Form</h2><p>{isMaintenance ? <>GM-Requisition Date: {formatDate(doc.createdAt)}<br />GM-Requisition No: {doc.number}</> : <>{isSurvey ? "Survey Requisition No." : "Install Requisition No."} {doc.number}</>}</p></div></header>
       <table className="paper-table">
         <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
         <tbody>
           {(doc.store?.items || []).map((item, index) => (
-            <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty}</td></tr>
+            <tr key={index}><td>{index + 1}</td><td>{item.itemId || item.serialNumber || "-"}</td><td>{item.name}</td><td>{item.requestedQty}</td><td>{item.issuedQty || ""}</td></tr>
           ))}
         </tbody>
       </table>
-      <div className="narration"><strong>Narration</strong><p>{isSurvey ? doc.engineer?.comments || "-" : doc.engineer?.notes || "-"}</p></div>
+      <div className="narration"><strong>Narration:</strong><p>{isMaintenance ? doc.maintenance?.action || "" : isSurvey ? doc.engineer?.comments || "-" : doc.engineer?.notes || "-"}</p></div>
       <div className="signature-grid">
         {people.map(([label, name, position, at]) => <Signature key={label} label={label} name={name} position={position} at={at} />)}
       </div>
@@ -809,21 +809,17 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
     <article id={printId} className={`paper-form certificate-form ${extraClass}`}>
       <div className="certificate-logo">zanlink</div>
       <div className="certificate-meta">
-        <span>Date: {formatDate(new Date())}</span>
-        <span>General Maintenance No: {doc.number}</span>
+        <span>Date:{formatDate(doc.createdAt)}</span>
+        <span>{certificate ? `Certificate No:Zanlink/${doc.number}` : `General Maintenance No: ${doc.number}`}</span>
       </div>
-      <h2>General Maintenance</h2>
+      <h2>{certificate ? "Certificate of Completion" : "General Maintenance"}</h2>
       <p className="certificate-intro">
         {certificate
-          ? `This confirms that the general maintenance work was completed successfully at ${doc.clientName} and the materials below were issued through requisition no. ${doc.number}.`
+          ? `This is to confirm and certify that the job was done successfully at ${doc.clientName} Tower/Node/Site and the below materials were issued through requisition no.${doc.number}.`
           : `This general maintenance document records the reported fault and recommended action for ${doc.clientName}.`}
       </p>
       <p><strong>Site Name:</strong> {doc.clientName}</p>
-      <p><strong>Location:</strong> {doc.location}</p>
-      <p><strong>Service:</strong> {doc.service}</p>
-      <p><strong>Submitted By:</strong> {engineerName}</p>
-      <p><strong>Fault:</strong> {doc.maintenance?.fault || "-"}</p>
-      <p><strong>Recommended Action:</strong> {doc.maintenance?.action || "-"}</p>
+      {!certificate && <><p><strong>Location:</strong> {doc.location}</p><p><strong>Service:</strong> {doc.service}</p><p><strong>Submitted By:</strong> {engineerName}</p><p><strong>Fault:</strong> {doc.maintenance?.fault || "-"}</p><p><strong>Recommended Action:</strong> {doc.maintenance?.action || "-"}</p></>}
       <h3>Materials Used</h3>
       <table className="paper-table">
         <thead><tr><th>S/N</th><th>Item ID</th><th>Description</th><th>Quantity Requested</th><th>Quantity Issued</th></tr></thead>
@@ -834,8 +830,8 @@ function MaintenanceDocumentPreview({ doc, printId, extraClass = "", certificate
         </tbody>
       </table>
       <div className="certificate-signoff">
-        <strong>Head of Department</strong>
-        <span>Name: {hodName}</span>
+        <strong>{certificate ? "Certified by Head of Department" : "Head of Department"}</strong>
+        {certificate ? <><span>Name:--------------------</span><span>Signature:--------------</span><span>Date:-------------------</span></> : <span>Name: {hodName}</span>}
       </div>
     </article>
   );
